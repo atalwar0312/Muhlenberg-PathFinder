@@ -216,3 +216,23 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Python generated files
+__pycache__/
+*.py[cod]
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+.next/
+
+# Local files and private data
+.DS_Store
+data/private/
