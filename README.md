@@ -1,1 +1,1 @@
-# Muhlenberg PathFinder
+# Muhlenberg-PathFinder
