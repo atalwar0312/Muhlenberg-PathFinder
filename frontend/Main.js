@@ -338,16 +338,7 @@
     if (text !== undefined && text !== null) el.textContent = text;
     return el;
   }
-
-
-
-
-
-
-
-
-
-  // Create a text element.
+ // Create a text element.
   const textNode = (tag, className, text) => {
     const el = createElement(tag, className);
     if (text !== undefined && text !== null) el.textContent = text;
@@ -448,7 +439,6 @@
       createProgressRing("GARS", garProgress, COLORS.RED),
       createProgressRing("OVERALL", overall, COLORS.GREEN)
     );
-
     contentCard.append(charts, buildNextCourses());
     main.append(header, buildIdentityBar(), contentCard);
     shell.append(sidebar, main);
