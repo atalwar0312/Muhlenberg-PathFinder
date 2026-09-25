@@ -1,7 +1,7 @@
 (function () {
   // Student details for the planner.
   const student = {
-    name: "Jonathan Jarrah",
+    name: "Andrew Jarrah",
     student_id: "0000000000",
     class_year: "Junior",
     majors: "Computer Science",
