@@ -200,6 +200,28 @@
       letter-spacing: 0.02em;
       text-transform: uppercase;
     }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(166, 25, 46, 0.08);
+      border: 1px solid rgba(166, 25, 46, 0.2);
+      color: ${COLORS.DARK_RED};
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: ${COLORS.GREEN};
+      box-shadow: 0 0 0 2px rgba(41, 122, 85, 0.14);
+    }
     /* Student info bar. */
     .identity-bar {
       background: ${COLORS.PANEL};
@@ -338,7 +360,8 @@
     if (text !== undefined && text !== null) el.textContent = text;
     return el;
   }
- // Create a text element.
+
+  // Create a text element.
   const textNode = (tag, className, text) => {
     const el = createElement(tag, className);
     if (text !== undefined && text !== null) el.textContent = text;
@@ -417,7 +440,18 @@
     // Main panel setup.
     const main = createElement("main", "main-panel");
     const header = createElement("div", "header");
-    header.append(textNode("h1", "header-title", "PathFinder"), textNode("div", "header-subtitle", "A CLEAR VIEW OF WHAT YOU HAVE COMPLETED AND WHAT COMES NEXT."));
+    const remainingCredits = student.credits_required - student.credits_completed;
+    const statusText = remainingCredits <= 30 ? "On track for graduation" : "Planning ahead";
+    const statusBadge = createElement("div", "status-badge");
+    const statusDot = createElement("span", "status-dot");
+    const statusLabel = textNode("span", null, `${statusText} · ${remainingCredits} credits remaining`);
+    statusBadge.append(statusDot, statusLabel);
+
+    header.append(
+      textNode("h1", "header-title", "PathFinder"),
+      textNode("div", "header-subtitle", "A CLEAR VIEW OF WHAT YOU HAVE COMPLETED AND WHAT COMES NEXT."),
+      statusBadge
+    );
 
     const contentCard = createElement("section", "content-card");
     contentCard.appendChild(textNode("h2", "panel-title", "Progress"));
@@ -439,6 +473,7 @@
       createProgressRing("GARS", garProgress, COLORS.RED),
       createProgressRing("OVERALL", overall, COLORS.GREEN)
     );
+
     contentCard.append(charts, buildNextCourses());
     main.append(header, buildIdentityBar(), contentCard);
     shell.append(sidebar, main);
