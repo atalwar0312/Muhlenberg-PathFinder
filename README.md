@@ -35,19 +35,3 @@ Stop the server with Control+C.
 | docs/diagrams/ | Design and architecture diagrams |
 | tests/ | Future application tests |
 | git-practice/ | Team Git exercises |
-
-## Document naming
-
-Use descriptive filenames, for example:
-
-- docs/meeting-notes/2026-10-06-team-meeting.md
-- docs/weekly-reports/week-06.docx
-- docs/proposal/project-proposal.docx
-- docs/diagrams/use-case-diagram.png
-
-## Contributing
-
-1. Create a branch for your work.
-2. Make and check your changes.
-3. Commit with a descriptive message.
-4. Push your branch and open a pull request.
