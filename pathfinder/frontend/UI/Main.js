@@ -554,6 +554,146 @@
       font-size: 12px;
       line-height: 1.5;
     }
+    .assistant-widget {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 12px;
+    }
+    .assistant-launcher {
+      width: 58px;
+      height: 58px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      background: ${COLORS.RED};
+      color: white;
+      box-shadow: 0 6px 20px rgba(36, 36, 36, 0.22);
+      font-size: 24px;
+      cursor: pointer;
+      transition: background 160ms ease, transform 160ms ease;
+    }
+    .assistant-launcher:hover {
+      background: ${COLORS.DARK_RED};
+      transform: translateY(-2px);
+    }
+    .assistant-launcher:focus-visible,
+    .assistant-close:focus-visible,
+    .assistant-send:focus-visible,
+    .assistant-input:focus-visible {
+      outline: 3px solid rgba(166, 25, 46, 0.3);
+      outline-offset: 2px;
+    }
+    .assistant-panel {
+      width: min(360px, calc(100vw - 32px));
+      height: min(440px, calc(100vh - 120px));
+      min-height: 280px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid ${COLORS.LINE};
+      border-radius: 14px;
+      background: ${COLORS.PANEL};
+      box-shadow: 0 12px 36px rgba(36, 36, 36, 0.2);
+    }
+    .assistant-panel[hidden] {
+      display: none;
+    }
+    .assistant-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      background: ${COLORS.RED};
+      color: white;
+    }
+    .assistant-heading {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .assistant-caption {
+      margin: 4px 0 0;
+      color: #f6dfe3;
+      font-size: 11px;
+    }
+    .assistant-close {
+      width: 30px;
+      height: 30px;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      font-size: 19px;
+      cursor: pointer;
+    }
+    .assistant-messages {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .assistant-empty {
+      margin: auto;
+      max-width: 230px;
+      color: ${COLORS.MUTED};
+      font-size: 12px;
+      line-height: 1.5;
+      text-align: center;
+    }
+    .assistant-message {
+      max-width: 88%;
+      align-self: flex-end;
+      padding: 10px 13px;
+      border-radius: 14px 14px 3px 14px;
+      background: #f7e9eb;
+      color: ${COLORS.INK};
+      font-size: 13px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+    .assistant-form {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid ${COLORS.LINE};
+    }
+    .assistant-input {
+      flex: 1;
+      min-width: 0;
+      max-height: 100px;
+      resize: none;
+      padding: 10px 12px;
+      border: 1px solid ${COLORS.LINE};
+      border-radius: 9px;
+      font: inherit;
+      font-size: 13px;
+    }
+    .assistant-send {
+      min-height: 38px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 8px;
+      background: ${COLORS.RED};
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .assistant-send:hover {
+      background: ${COLORS.DARK_RED};
+    }
     @media (max-width: 900px) {
       .pathfinder-shell {
         grid-template-columns: 200px minmax(0, 1fr);
@@ -638,6 +778,10 @@
       }
       .dashboard-links {
         grid-template-columns: 1fr;
+      }
+      .assistant-widget {
+        right: 16px;
+        bottom: 16px;
       }
     }
   `;
@@ -797,6 +941,77 @@
     return links;
   }
 
+  function buildAssistantWidget() {
+    const widget = createElement("div", "assistant-widget");
+    const panel = createElement("section", "assistant-panel");
+    panel.id = "assistant-panel";
+    panel.setAttribute("aria-labelledby", "assistant-heading");
+
+    const header = createElement("div", "assistant-header");
+    const headingGroup = createElement("div");
+    headingGroup.append(
+      textNode("h2", "assistant-heading", "HAL Chat Bot"),
+      textNode("p", "assistant-caption", "Blank tyyshi")
+    );
+    const closeButton = textNode("button", "assistant-close", "×");
+    closeButton.type = "button";
+    closeButton.setAttribute("aria-label", "Close quick chat");
+    header.append(headingGroup, closeButton);
+
+    const messages = createElement("div", "assistant-messages");
+    messages.setAttribute("aria-live", "polite");
+    messages.appendChild(textNode("p", "assistant-empty", "Type a message below to start chatting with the assistant."));
+
+    const form = createElement("form", "assistant-form");
+    const input = createElement("textarea", "assistant-input");
+    input.rows = 1;
+    input.setAttribute("aria-label", "Type a message");
+    input.placeholder = "Type a message...";
+    const sendButton = textNode("button", "assistant-send", "Send");
+    sendButton.type = "submit";
+    form.append(input, sendButton);
+    panel.append(header, messages, form);
+
+    const launcher = textNode("button", "assistant-launcher", "✎");
+    launcher.type = "button";
+    launcher.setAttribute("aria-label", "Open quick chat");
+    launcher.setAttribute("aria-controls", panel.id);
+    launcher.setAttribute("aria-expanded", "false");
+    panel.hidden = true;
+
+    function setOpen(isOpen) {
+      panel.hidden = !isOpen;
+      launcher.setAttribute("aria-expanded", String(isOpen));
+      launcher.setAttribute("aria-label", isOpen ? "Close quick chat" : "Open quick chat");
+      if (isOpen) input.focus();
+      else launcher.focus();
+    }
+
+    launcher.addEventListener("click", () => setOpen(panel.hidden));
+    closeButton.addEventListener("click", () => setOpen(false));
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const message = input.value.trim();
+      if (!message) return;
+
+      const emptyState = messages.querySelector(".assistant-empty");
+      if (emptyState) emptyState.remove();
+      messages.appendChild(textNode("div", "assistant-message", message));
+      input.value = "";
+      messages.scrollTop = messages.scrollHeight;
+      input.focus();
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    widget.append(panel, launcher);
+    return widget;
+  }
+
   // Set up the page layout.
   function init() {
     const currentPage = window.location.pathname.split("/").pop().replace(/\.html$/, "") || "index";
@@ -848,21 +1063,13 @@
       const pageSections = currentPage === "gars" ? buildGarsPage() : buildProgramPage(page);
       main.append(header, ...pageSections);
       shell.append(sidebar, main);
-      document.body.appendChild(shell);
+      document.body.append(shell, buildAssistantWidget());
       return;
     }
 
-    const remainingCredits = student.credits_required - student.credits_completed;
-    const statusText = remainingCredits <= 30 ? "On track for graduation" : "Planning ahead";
-    const statusBadge = createElement("div", "status-badge");
-    const statusDot = createElement("span", "status-dot");
-    const statusLabel = textNode("span", null, `${statusText} · ${remainingCredits} credits remaining`);
-    statusBadge.append(statusDot, statusLabel);
-
     header.append(
       textNode("h1", "header-title", "PathFinder"),
-      textNode("div", "header-subtitle", "A CLEAR VIEW OF WHAT YOU HAVE COMPLETED AND WHAT COMES NEXT."),
-      statusBadge
+      textNode("div", "header-subtitle", "A CLEAR VIEW OF WHAT YOU HAVE COMPLETED AND WHAT COMES NEXT.")
     );
 
     const contentCard = createElement("section", "content-card");
@@ -889,7 +1096,7 @@
     contentCard.append(charts, buildNextCourses());
     main.append(header, buildIdentityBar(), contentCard, buildDashboardLinks());
     shell.append(sidebar, main);
-    document.body.appendChild(shell);
+    document.body.append(shell, buildAssistantWidget());
   }
 
   if (document.readyState === "loading") {
