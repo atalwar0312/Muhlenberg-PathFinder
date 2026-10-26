@@ -15,14 +15,6 @@
     minor_progress: 58,
   };
 
-  // GARS categories and counts.
-  const garCategories = [
-    ["Writing", 3, 4],
-    ["Quantitative", 2, 3],
-    ["Humanities", 4, 5],
-    ["Natural Science", 3, 4],
-  ];
-
   // Top summary fields.
   const identityFields = [
     ["STUDENT", student.name],
@@ -47,10 +39,6 @@
       label: "Minor",
       program: student.minors,
       progress: student.minor_progress,
-    },
-    gars: {
-      title: "GARS Progress",
-      subtitle: "GENERAL ACADEMIC REQUIREMENTS",
     },
   };
 
@@ -408,8 +396,7 @@
       font-size: 13px;
       line-height: 1.55;
     }
-    .detail-progress-heading,
-    .gars-row-heading {
+    .detail-progress-heading {
       display: flex;
       justify-content: space-between;
       gap: 12px;
@@ -417,12 +404,10 @@
       font-size: 12px;
       font-weight: 700;
     }
-    .detail-progress-heading span:last-child,
-    .gars-row-heading span:last-child {
+    .detail-progress-heading span:last-child {
       color: ${COLORS.DARK_RED};
     }
-    .detail-track,
-    .gars-track {
+    .detail-track {
       width: 100%;
       height: 9px;
       margin-top: 10px;
@@ -430,8 +415,7 @@
       border-radius: 999px;
       background: #f0e8e9;
     }
-    .detail-track-fill,
-    .gars-track-fill {
+    .detail-track-fill {
       height: 100%;
       border-radius: inherit;
       background: linear-gradient(90deg, ${COLORS.RED}, ${COLORS.DARK_RED});
@@ -486,29 +470,6 @@
       margin: 8px 0 0;
       color: #f5dfe2;
       font-size: 12px;
-    }
-    .gars-card {
-      margin-top: 16px;
-    }
-    .gars-list {
-      display: grid;
-      gap: 20px;
-      margin-top: 22px;
-    }
-    .gars-row-heading {
-      font-size: 13px;
-    }
-    .gars-row-heading span:last-child {
-      color: ${COLORS.MUTED};
-      font-size: 11px;
-      font-weight: 600;
-    }
-    .gars-track {
-      height: 7px;
-      margin-top: 9px;
-    }
-    .gars-track-fill {
-      background: ${COLORS.RED};
     }
     .dashboard-links {
       display: grid;
@@ -881,54 +842,11 @@
     return [intro, grid];
   }
 
-  function buildGarsPage() {
-    const totalCompleted = garCategories.reduce((sum, category) => sum + category[1], 0);
-    const totalRequirements = garCategories.reduce((sum, category) => sum + category[2], 0);
-    const completedPercent = Math.round((totalCompleted / totalRequirements) * 100);
-    const intro = textNode("p", "detail-intro", "See how your completed general academic requirements are distributed across each area.");
-    const summary = createElement("section", "detail-card detail-card--primary");
-    const summaryHead = createElement("div", "detail-progress-heading");
-    summaryHead.append(textNode("span", null, "Overall GARS progress"), textNode("span", null, `${totalCompleted} of ${totalRequirements} completed`));
-    const track = createElement("div", "detail-track");
-    track.setAttribute("role", "progressbar");
-    track.setAttribute("aria-label", "Overall GARS requirements completed");
-    track.setAttribute("aria-valuemin", "0");
-    track.setAttribute("aria-valuemax", "100");
-    track.setAttribute("aria-valuenow", String(completedPercent));
-    const fill = createElement("div", "detail-track-fill");
-    fill.style.width = `${completedPercent}%`;
-    track.appendChild(fill);
-    summary.append(textNode("p", "detail-eyebrow", "Requirement overview"), textNode("h2", "detail-program", "General Academic Requirements"), summaryHead, track);
-
-    const categoryCard = createElement("section", "detail-card gars-card");
-    categoryCard.append(textNode("h2", "panel-title", "Progress by area"));
-    const list = createElement("div", "gars-list");
-    garCategories.forEach(([name, completed, total]) => {
-      const row = createElement("div", "gars-row");
-      const heading = createElement("div", "gars-row-heading");
-      heading.append(textNode("span", null, name), textNode("span", null, `${completed} of ${total} completed`));
-      const rowTrack = createElement("div", "gars-track");
-      rowTrack.setAttribute("role", "progressbar");
-      rowTrack.setAttribute("aria-label", `${name} requirements completed`);
-      rowTrack.setAttribute("aria-valuemin", "0");
-      rowTrack.setAttribute("aria-valuemax", String(total));
-      rowTrack.setAttribute("aria-valuenow", String(completed));
-      const rowFill = createElement("div", "gars-track-fill");
-      rowFill.style.width = `${Math.round((completed / total) * 100)}%`;
-      rowTrack.appendChild(rowFill);
-      row.append(heading, rowTrack);
-      list.appendChild(row);
-    });
-    categoryCard.appendChild(list);
-    return [intro, summary, categoryCard];
-  }
-
   function buildDashboardLinks() {
     const links = createElement("section", "dashboard-links");
     [
       ["major", "Major requirements", "Explore your Computer Science progress."],
       ["minor", "Minor requirements", "See your Data Science progress."],
-      ["gars", "General requirements", "Review progress across GARS areas."],
     ].forEach(([target, title, copy]) => {
       const button = createElement("button", "dashboard-link");
       button.type = "button";
@@ -1027,7 +945,7 @@
     const progressButton = textNode("button", `sidebar-button sidebar-button--parent${currentPage === "index" ? " sidebar-button--active" : ""}`, "PROGRESS");
     const submenu = createElement("div", "sidebar-submenu is-open");
 
-    ["MAJOR", "MINOR", "GARS"].forEach((label, index) => {
+    ["MAJOR", "MINOR"].forEach((label) => {
       const button = textNode("button", `sidebar-button sidebar-button--child${currentPage === label.toLowerCase() ? " sidebar-button--active" : ""}`, label);
       button.addEventListener("click", () => {
         window.location.href = `${label.toLowerCase()}.html`;
@@ -1060,8 +978,7 @@
         textNode("h1", "header-title", page.title),
         textNode("div", "header-subtitle", page.subtitle)
       );
-      const pageSections = currentPage === "gars" ? buildGarsPage() : buildProgramPage(page);
-      main.append(header, ...pageSections);
+      main.append(header, ...buildProgramPage(page));
       shell.append(sidebar, main);
       document.body.append(shell, buildAssistantWidget());
       return;
@@ -1078,18 +995,12 @@
     // Build the progress rings.
     const charts = createElement("div", "progress-charts");
     const { major_progress, minor_progress, credits_completed, credits_required } = student;
-    // GARS percentage.
-    const garProgress = Math.round(
-      (garCategories.reduce((sum, item) => sum + item[1], 0) /
-        garCategories.reduce((sum, item) => sum + item[2], 0)) * 100
-    );
     // Overall credit percentage.
     const overall = Math.round((credits_completed / credits_required) * 100);
 
     charts.append(
       createProgressRing("MAJOR", Math.round(major_progress), COLORS.RED),
       createProgressRing("MINOR", Math.round(minor_progress), COLORS.DARK_RED),
-      createProgressRing("GARS", garProgress, COLORS.RED),
       createProgressRing("OVERALL", overall, COLORS.GREEN)
     );
 
