@@ -951,7 +951,7 @@
     const headingGroup = createElement("div");
     headingGroup.append(
       textNode("h2", "assistant-heading", "HAL Chat Bot"),
-      textNode("p", "assistant-caption", "Blank tyyshi")
+      textNode("p", "assistant-caption", "Personal Assistant ")
     );
     const closeButton = textNode("button", "assistant-close", "×");
     closeButton.type = "button";
