@@ -1,0 +1,10 @@
+{
+  "name": "pathfinder-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PathFinder layered server prototype (Assignment 5)",
+  "type": "commonjs",
+  "scripts": {"start": "node app.js", "test": "node --test ../../tests/backend.test.js"},
+  "dependencies": {"express": "^4.21.2"},
+  "engines": {"node": ">=18"}
+}
