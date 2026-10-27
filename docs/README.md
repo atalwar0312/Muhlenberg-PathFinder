@@ -43,3 +43,13 @@ The historical source course data lives in [`../data/source/`](../data/source/) 
 ## Maintaining this index
 
 When exporting a new revision from Drive, note its date and original source, update the corresponding link, and distinguish current approved artifacts from historical drafts. Avoid copying entire ZIP archives and duplicate legacy drafts without a specific need.
+
+## Latest approved project documents
+
+- **Final Requirements Document:** [PathFinder_Final.docx](requirements/requirements-document-current.docx)
+- **Presentation #2:** [presentation-02.pptx](presentations/presentation-02.pptx)
+- **Weekly Report 6:** [week-06.docx](weekly-reports/week-06.docx)
+- **Weekly Report 7:** [week-07.docx](weekly-reports/week-07.docx)
+- **Weekly Report 8:** [week-08.docx](weekly-reports/week-08.docx)
+
+The Final Requirements Document is the authoritative version confirmed by the project team. Earlier requirements files are retained for historical reference.
