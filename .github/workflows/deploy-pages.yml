@@ -32,10 +32,17 @@ jobs:
         with:
           enablement: true
 
+      - name: Prepare preview with login as homepage
+        run: |
+          mkdir -p _pathfinder_site
+          cp -R pathfinder/frontend/UI/. _pathfinder_site/
+          cp _pathfinder_site/index.html _pathfinder_site/dashboard.html
+          cp _pathfinder_site/login.html _pathfinder_site/index.html
+
       - name: Upload static PathFinder UI
         uses: actions/upload-pages-artifact@v3
         with:
-          path: pathfinder/frontend/UI
+          path: _pathfinder_site
 
       - name: Deploy to GitHub Pages
         id: deployment
