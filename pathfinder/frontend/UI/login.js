@@ -1,9 +1,15 @@
-// PathFinder login: UI only. The backend team will connect authentication later.
+const SESSION_KEY = 'pathfinder-demo-authenticated';
+const DEMO_EMAIL = 'demo@muhlenberg.edu';
+const DEMO_PASSWORD = 'PathfinderDemo1!';
 const form = document.getElementById('login-form');
 const email = document.getElementById('email');
 const password = document.getElementById('password');
 const togglePassword = document.getElementById('toggle-password');
 const message = document.getElementById('form-message');
+
+if (sessionStorage.getItem(SESSION_KEY) === 'true') {
+  window.location.replace('index.html');
+}
 
 function setError(field, error) {
   document.getElementById(`${field.id}-error`).textContent = error;
@@ -28,21 +34,28 @@ password.addEventListener('input', () => setError(password, ''));
 form.addEventListener('submit', (event) => {
   event.preventDefault();
   message.hidden = true;
-  const address = email.value.trim();
+  const address = email.value.trim().toLowerCase();
   const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address);
-  setError(email, !address ? 'Please enter your college email.' : !validEmail ? 'Enter a valid email address.' : '');
-  setError(password, password.value ? '' : 'Please enter your password.');
+  setError(email, !address ? 'Please enter the demo email.' : !validEmail ? 'Enter a valid email address.' : '');
+  setError(password, password.value ? '' : 'Please enter the password.');
   if (!validEmail || !password.value) return;
 
-  // TODO: replace this message with a POST to your team's authentication API.
-  // Redirect to index.html only after the server confirms successful login.
-  // Never store passwords in localStorage or hardcode accepted credentials.
-  showMessage('The login UI is ready. Your team still needs to connect the authentication backend.');
+  if (address !== DEMO_EMAIL) {
+    setError(email, 'Use the demo account email shown above.');
+    return;
+  }
+  if (password.value !== DEMO_PASSWORD) {
+    setError(password, 'That demo password is incorrect.');
+    return;
+  }
+
+  sessionStorage.setItem(SESSION_KEY, 'true');
+  window.location.replace('index.html');
 });
 
 document.getElementById('google-login').addEventListener('click', () => {
-  showMessage('Google sign-in will be available after your team configures Google authentication.');
+  showMessage('Google sign-in is not configured in this demo. Use the demo account above.');
 });
 document.getElementById('forgot-password').addEventListener('click', () => {
-  showMessage('Password reset will be available after your team connects the account recovery service.');
+  showMessage('Password reset is not available for the demo account.');
 });

@@ -932,6 +932,11 @@
 
   // Set up the page layout.
   function init() {
+    if (sessionStorage.getItem("pathfinder-demo-authenticated") !== "true") {
+      window.location.replace("login.html");
+      return;
+    }
+
     const currentPage = window.location.pathname.split("/").pop().replace(/\.html$/, "") || "index";
     const page = pageContent[currentPage];
     document.title = page ? `${page.title} | PathFinder` : "PathFinder | Muhlenberg Academic Planner";
@@ -957,7 +962,13 @@
       window.location.href = "index.html";
     });
 
-    sidebarNav.append(progressButton, submenu);
+    const signOutButton = textNode("button", "sidebar-button", "DEMO SIGN OUT");
+    signOutButton.addEventListener("click", () => {
+      sessionStorage.removeItem("pathfinder-demo-authenticated");
+      window.location.replace("login.html");
+    });
+
+    sidebarNav.append(progressButton, submenu, signOutButton);
 
     sidebar.append(
       textNode("div", "sidebar-title", "PathFinder"),

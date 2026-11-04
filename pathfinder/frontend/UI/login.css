@@ -170,6 +170,26 @@ h2 {
   line-height: 1.5;
 }
 
+.demo-note {
+  margin: -13px 0 22px;
+  padding: 11px 13px;
+  border: 1px solid #e4d7d9;
+  border-radius: 7px;
+  background: #fff9fa;
+  color: #41414a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.demo-note code {
+  color: var(--dark-red);
+  font-family: Consolas, monospace;
+}
+
+.demo-note span {
+  color: var(--muted);
+}
+
 .field { margin: 0 0 19px; }
 
 .field label {
@@ -257,25 +277,9 @@ h2 {
 .form-options {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 10px;
   margin: -4px 0 17px;
-}
-
-.remember {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #41414a;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.remember input {
-  width: 17px;
-  height: 17px;
-  margin: 0;
-  accent-color: var(--red);
 }
 
 .text-button {
