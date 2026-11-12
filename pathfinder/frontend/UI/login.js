@@ -53,9 +53,6 @@ form.addEventListener('submit', (event) => {
   window.location.replace('index.html');
 });
 
-document.getElementById('google-login').addEventListener('click', () => {
-  showMessage('Google sign-in is not configured in this demo. Use the demo account above.');
-});
 document.getElementById('forgot-password').addEventListener('click', () => {
   showMessage('Password reset is not available for the demo account.');
 });

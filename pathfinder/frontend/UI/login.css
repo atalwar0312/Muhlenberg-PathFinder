@@ -326,47 +326,6 @@ h2 {
 
 .form-message[hidden] { display: none; }
 
-.divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 19px 0 12px;
-  color: #7a7b83;
-  font-size: 12px;
-}
-
-.divider::before,
-.divider::after {
-  height: 1px;
-  flex: 1;
-  background: #e4e4e6;
-  content: "";
-}
-
-.google-button {
-  display: flex;
-  width: 100%;
-  min-height: 51px;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  border: 1px solid #cfcfd3;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, .86);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.google-button:hover { background: #faf7f7; border-color: #b7b8bc; }
-
-.google-g {
-  font: bold 24px Arial, sans-serif;
-  background: conic-gradient(from -45deg, #4285f4 0 25%, #34a853 25% 48%, #fbbc05 48% 72%, #ea4335 72% 88%, #4285f4 88%);
-  background-clip: text;
-  color: transparent;
-}
-
 .help-text {
   margin: 39px 0 0;
   color: var(--muted);
@@ -427,7 +386,6 @@ h2 {
   .form-options { align-items: flex-start; }
   .text-button { text-align: right; }
   .desktop-break { display: none; }
-  .google-button { font-size: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
