@@ -872,6 +872,120 @@
       font-size: 12px;
       line-height: 1.5;
     }
+    .hal-widget {
+      position: fixed;
+      right: 22px;
+      bottom: 20px;
+      z-index: 20;
+      font-family: inherit;
+    }
+    .hal-toggle {
+      display: block;
+      margin-left: auto;
+      padding: 12px 18px;
+      border: 0;
+      border-radius: 999px;
+      background: ${COLORS.RED};
+      box-shadow: 0 5px 18px rgba(36, 36, 36, 0.2);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .hal-toggle:hover,
+    .hal-toggle:focus-visible {
+      background: ${COLORS.DARK_RED};
+    }
+    .hal-panel {
+      display: flex;
+      width: min(360px, calc(100vw - 32px));
+      height: min(500px, calc(100vh - 100px));
+      min-height: 320px;
+      margin-bottom: 12px;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid ${COLORS.LINE};
+      border-radius: 12px;
+      background: ${COLORS.PANEL};
+      box-shadow: 0 8px 30px rgba(36, 36, 36, 0.2);
+    }
+    .hal-panel[hidden] { display: none; }
+    .hal-header {
+      padding: 15px 17px;
+      background: ${COLORS.RED};
+      color: #fff;
+    }
+    .hal-title {
+      margin: 0;
+      font-size: 15px;
+    }
+    .hal-status {
+      margin: 4px 0 0;
+      color: #f6dfe3;
+      font-size: 11px;
+    }
+    .hal-messages {
+      display: flex;
+      min-height: 0;
+      padding: 14px;
+      flex: 1;
+      flex-direction: column;
+      gap: 10px;
+      overflow: auto;
+    }
+    .hal-message {
+      max-width: 94%;
+      margin: 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #f3f3f3;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-line;
+    }
+    .hal-message--user {
+      align-self: flex-end;
+      background: #f8e9ec;
+    }
+    .hal-action {
+      align-self: flex-start;
+      padding: 8px 11px;
+      border: 1px solid ${COLORS.RED};
+      border-radius: 6px;
+      background: #fff;
+      color: ${COLORS.DARK_RED};
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .hal-action:hover,
+    .hal-action:focus-visible {
+      background: #f8e9ec;
+    }
+    .hal-options {
+      display: grid;
+      padding: 10px 12px 12px;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      border-top: 1px solid ${COLORS.LINE};
+    }
+    .hal-option {
+      min-height: 36px;
+      padding: 7px 8px;
+      border: 1px solid ${COLORS.LINE};
+      border-radius: 6px;
+      background: #fff;
+      color: ${COLORS.INK};
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.25;
+      cursor: pointer;
+    }
+    .hal-option:hover,
+    .hal-option:focus-visible {
+      border-color: ${COLORS.RED};
+      color: ${COLORS.DARK_RED};
+    }
     @media (max-width: 900px) {
       .pathfinder-shell {
         grid-template-columns: 200px minmax(0, 1fr);
@@ -983,6 +1097,13 @@
       }
       .dashboard-links {
         grid-template-columns: 1fr;
+      }
+      .hal-widget {
+        right: 12px;
+        bottom: 12px;
+      }
+      .hal-panel {
+        height: min(500px, calc(100vh - 82px));
       }
     }
   `;
@@ -1135,7 +1256,7 @@
   async function buildProgramPage(page) {
     const selection = getProgramSelection();
     const selectedPrograms = page.label === "Major" ? [selection.major] : selection.minors;
-    const intro = textNode("p", "detail-intro", `Track your ${page.label.toLowerCase()} requirements using courses saved in your demo course history.`);
+    const intro = textNode("p", "detail-intro", `Track your ${page.label.toLowerCase()} requirements using courses saved in your course history.`);
     const cards = [];
 
     if (!selectedPrograms.length) {
@@ -1354,7 +1475,7 @@
   function buildHistoryEditor(catalog) {
     const card = createElement("section", "planner-card");
     card.appendChild(textNode("h2", "planner-card-title", "Completed course history"));
-    card.appendChild(textNode("p", "planner-note", "Choose courses from the catalog and save their grade and course units. Records are stored locally in this browser for the demo."));
+    card.appendChild(textNode("p", "planner-note", "Choose courses from the catalog and save their grade and course units. Records are stored locally in this browser."));
 
     const form = createElement("form", "course-entry-form");
     const courseField = createElement("div", "planner-field");
@@ -1598,7 +1719,7 @@
     const history = getCourseHistory();
     const content = createElement("section", "planner-card");
     content.appendChild(textNode("h2", "planner-card-title", "Programs closest to your completed coursework"));
-    content.appendChild(textNode("p", "planner-note", "Suggestions are separate from your declarations and use the demo requirement set from the Mathematics and Computer Science workbook."));
+    content.appendChild(textNode("p", "planner-note", "Suggestions are separate from your declarations and use the Mathematics and Computer Science requirement set."));
     if (!history.length) {
       content.appendChild(textNode("p", "planner-note", "Add completed courses in Courses to see ranked program suggestions."));
       return content;
@@ -1643,9 +1764,120 @@
     return content;
   }
 
+  function buildHalChatWidget() {
+    const widget = createElement("section", "hal-widget");
+    const panel = createElement("div", "hal-panel");
+    panel.hidden = true;
+    panel.setAttribute("aria-label", "HAL help menu");
+
+    const header = createElement("div", "hal-header");
+    header.append(
+      textNode("h2", "hal-title", "HAL · PathFinder Assistant"),
+      textNode("p", "hal-status", "Choose an option to get started")
+    );
+    const messages = createElement("div", "hal-messages");
+    messages.setAttribute("role", "log");
+    messages.setAttribute("aria-live", "polite");
+    messages.setAttribute("aria-relevant", "additions");
+    messages.appendChild(textNode("p", "hal-message", "Hi! I can help you use your academic planner. Select a topic below."));
+
+    const options = createElement("div", "hal-options");
+    const menuItems = [
+      { label: "Check my progress", action: "progress" },
+      { label: "Find or add courses", action: "courses" },
+      { label: "Explore opportunities", action: "opportunities" },
+      { label: "Manage my programs", action: "programs" },
+      { label: "How PathFinder works", action: "help" },
+    ];
+
+    const addMessage = (text, isUser = false) => {
+      const message = textNode("p", `hal-message${isUser ? " hal-message--user" : ""}`, text);
+      messages.appendChild(message);
+      messages.scrollTop = messages.scrollHeight;
+    };
+
+    const addAction = (label, pageName) => {
+      const button = textNode("button", "hal-action", label);
+      button.type = "button";
+      button.addEventListener("click", () => goToPage(pageName));
+      messages.appendChild(button);
+      messages.scrollTop = messages.scrollHeight;
+    };
+
+    const respond = (action) => {
+      const item = menuItems.find((option) => option.action === action);
+      addMessage(item.label, true);
+
+      if (action === "progress") {
+        const history = getCourseHistory();
+        const selection = getProgramSelection();
+        const units = history.reduce((total, course) => total + course.units, 0);
+        const major = programDefinitions.find((program) => program.type === "major" && program.name === selection.major);
+        const majorProgress = major ? evaluateProgram(major, history).percent : null;
+        const minors = selection.minors.map((name) => {
+          const program = programDefinitions.find((item) => item.type === "minor" && item.name === name);
+          return program ? `${name}: ${evaluateProgram(program, history).percent}%` : `${name}: requirements unavailable`;
+        });
+        const progressSummary = [
+          `Major: ${selection.major}${majorProgress === null ? "" : ` (${majorProgress}% complete)`}`,
+          `Minors: ${minors.join(", ") || "None selected"}`,
+          `Courses recorded: ${history.length} · Units earned: ${units.toFixed(1)} / 32`,
+          `Cumulative GPA: ${calculateGpa(history) || "Unavailable"}`,
+        ].join("\n");
+        addMessage(progressSummary);
+        addAction("Open progress dashboard", "index");
+        return;
+      }
+
+      if (action === "courses") {
+        addMessage("The Courses page includes the catalog and your saved course history. You can add courses, record grades and units, and edit or remove entries.");
+        addAction("Go to Courses", "courses");
+        return;
+      }
+
+      if (action === "opportunities") {
+        addMessage("Opportunity Finder compares your completed courses with the available program requirements and ranks possible matches.");
+        addAction("Explore opportunities", "opportunities");
+        return;
+      }
+
+      if (action === "programs") {
+        addMessage("My Programs lets you choose one major and up to two minors. Your choices are saved in this browser and used for progress calculations.");
+        addAction("Manage my programs", "programs");
+        return;
+      }
+
+      addMessage("Use Courses to record completed classes, My Programs to set your major and minors, and the dashboard to see progress. Opportunity Finder suggests other programs based on your saved courses.");
+      addAction("Start with Courses", "courses");
+    };
+
+    menuItems.forEach(({ label, action }) => {
+      const button = textNode("button", "hal-option", label);
+      button.type = "button";
+      button.addEventListener("click", () => respond(action));
+      options.appendChild(button);
+    });
+
+    const toggle = textNode("button", "hal-toggle", "Ask HAL");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-controls", "hal-panel");
+    panel.id = "hal-panel";
+    toggle.addEventListener("click", () => {
+      panel.hidden = !panel.hidden;
+      toggle.setAttribute("aria-expanded", String(!panel.hidden));
+      toggle.textContent = panel.hidden ? "Ask HAL" : "Close HAL";
+      if (!panel.hidden) options.querySelector("button").focus();
+    });
+
+    panel.append(header, messages, options);
+    widget.append(panel, toggle);
+    return widget;
+  }
+
   // Set up the page layout.
   async function init() {
-    if (sessionStorage.getItem("pathfinder-demo-authenticated") !== "true") {
+    if (sessionStorage.getItem("pathfinder-authenticated") !== "true") {
       window.location.replace("login.html");
       return;
     }
@@ -1726,7 +1958,7 @@
       header = buildPageHeader("Courses", "2026–27 COURSE CATALOG");
       main.appendChild(header);
       shell.append(sidebar, main);
-      document.body.append(shell);
+      document.body.append(shell, buildHalChatWidget());
       main.appendChild(await buildCourseList());
       return;
     }
@@ -1734,21 +1966,21 @@
       header = buildPageHeader("Opportunity Finder", "PROGRAM SUGGESTIONS BASED ON COMPLETED COURSES");
       main.append(header, await buildOpportunityPage());
       shell.append(sidebar, main);
-      document.body.append(shell);
+      document.body.append(shell, buildHalChatWidget());
       return;
     }
     if (isProgramsPage) {
       header = buildPageHeader("My Programs", "CHOOSE YOUR MAJOR AND UP TO TWO MINORS");
       main.append(header, buildProgramSelectionPage());
       shell.append(sidebar, main);
-      document.body.append(shell);
+      document.body.append(shell, buildHalChatWidget());
       return;
     }
     if (page) {
       header = buildPageHeader(page.title, page.subtitle);
       main.append(header, ...await buildProgramPage(page));
       shell.append(sidebar, main);
-      document.body.append(shell);
+      document.body.append(shell, buildHalChatWidget());
       return;
     }
 
@@ -1783,7 +2015,7 @@
     contentCard.append(charts, buildNextCourses());
     main.append(header, buildIdentityBar(history), contentCard, buildDashboardLinks());
     shell.append(sidebar, main);
-    document.body.append(shell);
+    document.body.append(shell, buildHalChatWidget());
   }
 
   if (document.readyState === "loading") {

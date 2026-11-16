@@ -170,26 +170,6 @@ h2 {
   line-height: 1.5;
 }
 
-.demo-note {
-  margin: -13px 0 22px;
-  padding: 11px 13px;
-  border: 1px solid #e4d7d9;
-  border-radius: 7px;
-  background: #fff9fa;
-  color: #41414a;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.demo-note code {
-  color: var(--dark-red);
-  font-family: Consolas, monospace;
-}
-
-.demo-note span {
-  color: var(--muted);
-}
-
 .field { margin: 0 0 19px; }
 
 .field label {
