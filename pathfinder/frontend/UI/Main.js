@@ -6,53 +6,211 @@
     name: "Andrew Jarrah",
     student_id: "0000000000",
     class_year: "Junior",
-    majors: "Computer Science",
-    minors: "Data Science",
-    credits_completed: 78,
-    credits_required: 128,
     graduation_term: "Spring 2028",
-    major_progress: 72,
-    minor_progress: 58,
   };
-
-  // GARS categories and counts.
-  const garCategories = [
-    ["Writing", 3, 4],
-    ["Quantitative", 2, 3],
-    ["Humanities", 4, 5],
-    ["Natural Science", 3, 4],
-  ];
 
   // Top summary fields.
   const identityFields = [
     ["STUDENT", student.name],
     ["ID NUMBER", student.student_id],
     ["CLASS YEAR", student.class_year],
-    ["DECLARED MAJOR", student.majors],
-    ["MINOR", student.minors],
     ["PROJECTED GRADUATION", student.graduation_term],
   ];
 
   const pageContent = {
     major: {
       title: "Major Progress",
-      subtitle: "COMPUTER SCIENCE · DEGREE REQUIREMENTS",
+      subtitle: "DECLARED MAJOR · DEGREE REQUIREMENTS",
       label: "Major",
-      program: student.majors,
-      progress: student.major_progress,
     },
     minor: {
       title: "Minor Progress",
-      subtitle: "DATA SCIENCE · DEGREE REQUIREMENTS",
+      subtitle: "DECLARED MINORS · DEGREE REQUIREMENTS",
       label: "Minor",
-      program: student.minors,
-      progress: student.minor_progress,
-    },
-    gars: {
-      title: "GARS Progress",
-      subtitle: "GENERAL ACADEMIC REQUIREMENTS",
     },
   };
+  const currentPage = window.location.pathname.split("/").pop().replace(/\.html$/, "") || "index";
+  const isCoursesPage = currentPage === "courses";
+  const isHistoryPage = currentPage === "history";
+  const isOpportunitiesPage = currentPage === "opportunities";
+  const COURSE_HISTORY_KEY = "pathfinder-course-history";
+  const COURSE_CATALOG_URL = "../../../data/sample/2026-27%20Catalog%20course%20export%20-%20Sheet1.csv";
+  const LETTER_GRADE_POINTS = {
+    "A+": 4, A: 4, "A-": 3.7, "B+": 3.3, B: 3, "B-": 2.7,
+    "C+": 2.3, C: 2, "C-": 1.7, "D+": 1.3, D: 1, "D-": 0.7, F: 0,
+  };
+  // Program and course information is loaded from the Express API (which reads Supabase).
+  let programDefinitions = [];
+  let majorOptions = [];
+  let minorOptions = [];
+  let courseCatalogCache = null;
+  let apiLoadError = "";
+
+  const PROGRAM_SELECTION_KEY = "pathfinder-program-selection";
+  const initialProgramSelection = { major: "", minors: [] };
+  const isProgramsPage = currentPage === "programs";
+
+  async function apiGet(path) {
+    const response = await fetch(path, { headers: { Accept: "application/json" } });
+    let payload;
+    try { payload = await response.json(); }
+    catch { throw new Error(`The server returned an invalid response (${response.status}).`); }
+    if (!response.ok) throw new Error(payload?.error || `Request failed (${response.status}).`);
+    return payload?.data ?? payload;
+  }
+
+  function normalizeCourse(row) {
+    const subject = String(row.prefix ?? row.subject ?? "").trim();
+    const number = String(row.number ?? "").trim();
+    return {
+      ...row,
+      subject,
+      number,
+      code: `${subject} ${number}`.trim(),
+      name: String(row.name ?? row.title ?? "").trim(),
+      units: Number.isFinite(Number(row.units)) ? Number(row.units) : null,
+    };
+  }
+
+  function requirementMatchesCourse(requirement, course) {
+    const code = String(course.code || `${course.subject} ${course.number}`).trim().toUpperCase();
+    return (requirement.items || []).some((item) => {
+      const prefix = String(item.prefix || "").trim().toUpperCase();
+      if (prefix && prefix !== String(course.subject || "").trim().toUpperCase()) return false;
+      const number = String(item.number || "").trim();
+      if (number) return number.toUpperCase() === String(course.number || "").trim().toUpperCase();
+      const courseNumber = Number.parseInt(course.number, 10);
+      const min = item.min_number == null ? null : Number(item.min_number);
+      const max = item.max_number == null ? null : Number(item.max_number);
+      if (!Number.isFinite(courseNumber)) return false;
+      return (min == null || courseNumber >= min) && (max == null || courseNumber <= max) && (min != null || max != null);
+    });
+  }
+
+  async function loadPrograms() {
+    const rows = await apiGet("/api/programs");
+    const programs = await Promise.all(rows.map(async (row) => {
+      const detail = await apiGet(`/api/programs/${encodeURIComponent(row.id)}/requirements`);
+      const rawRequirements = detail.requirements || [];
+      const requirements = rawRequirements.map((requirement) => ({
+        id: requirement.id,
+        label: requirement.name || `Requirement ${requirement.sort_order ?? requirement.id}`,
+        slots: Math.max(1, Number(requirement.courses_required) || (requirement.items?.length || 1)),
+        items: requirement.items || [],
+        matches(course) { return requirementMatchesCourse(this, course); },
+      }));
+      return { ...row, name: row.name || `Program ${row.id}`, type: String(row.type || "").toLowerCase(), requirements };
+    }));
+    programDefinitions = programs.filter((program) => ["major", "minor"].includes(program.type));
+    majorOptions = [...new Set(programDefinitions.filter((program) => program.type === "major").map((program) => program.name))];
+    minorOptions = [...new Set(programDefinitions.filter((program) => program.type === "minor").map((program) => program.name))];
+    if (!majorOptions.length) throw new Error("No major programs were returned by the database.");
+    initialProgramSelection.major = majorOptions[0];
+  }
+
+  async function loadCourseCatalog() {
+    if (courseCatalogCache) return courseCatalogCache;
+    const rows = await apiGet("/api/courses");
+    courseCatalogCache = rows.map(normalizeCourse).filter((course) => course.subject && course.number && course.name);
+    return courseCatalogCache;
+  }
+
+
+  function getProgramSelection() {
+    const stored = localStorage.getItem(PROGRAM_SELECTION_KEY);
+    if (!stored) return { major: initialProgramSelection.major, minors: [...initialProgramSelection.minors] };
+
+    const selection = JSON.parse(stored);
+    if (!selection || !majorOptions.includes(selection.major) || !Array.isArray(selection.minors) ||
+      selection.minors.length > 2 || selection.minors.some((minor) => !minorOptions.includes(minor) || minor === selection.major) ||
+      new Set(selection.minors).size !== selection.minors.length) {
+      const reset = { major: initialProgramSelection.major, minors: [] };
+      saveProgramSelection(reset);
+      return reset;
+    }
+    return selection;
+  }
+
+  function saveProgramSelection(selection) {
+    localStorage.setItem(PROGRAM_SELECTION_KEY, JSON.stringify(selection));
+  }
+
+  function getCourseHistory() {
+    const stored = localStorage.getItem(COURSE_HISTORY_KEY);
+    if (!stored) return [];
+    const history = JSON.parse(stored);
+    if (!Array.isArray(history)) throw new Error("Saved course history is not a valid list.");
+    return history;
+  }
+
+  function saveCourseHistory(history) {
+    localStorage.setItem(COURSE_HISTORY_KEY, JSON.stringify(history));
+  }
+
+  function calculateGpa(history) {
+    const eligible = history.filter((course) => Object.hasOwn(LETTER_GRADE_POINTS, course.grade) && Number.isFinite(course.units) && course.units > 0);
+    const units = eligible.reduce((total, course) => total + course.units, 0);
+    if (!units) return null;
+    const qualityPoints = eligible.reduce((total, course) => total + LETTER_GRADE_POINTS[course.grade] * course.units, 0);
+    return (qualityPoints / units).toFixed(2);
+  }
+
+  function evaluateProgram(program, history, catalog = []) {
+    const courseByCode = new Map(history.map((course) => [course.code, course]));
+    const usedCodes = new Set();
+    const requirements = program.requirements.map((requirement) => {
+      let candidates = history.filter((course) => {
+        const matchesCode = requirement.codes ? requirement.codes.includes(course.code) : requirement.matches(course);
+        return matchesCode && !usedCodes.has(course.code);
+      });
+      const hasOneHundredLevelCourse = candidates.some((course) => Number.parseInt(course.number, 10) < 200);
+      if (requirement.requiresOneOf) {
+        candidates.sort((left, right) =>
+          Number(requirement.requiresOneOf.includes(right.code)) - Number(requirement.requiresOneOf.includes(left.code))
+        );
+      }
+      if (requirement.maxOneHundredLevel) {
+        const oneHundredLevel = candidates.filter((course) => Number.parseInt(course.number, 10) < 200);
+        const higherLevel = candidates.filter((course) => Number.parseInt(course.number, 10) >= 200);
+        candidates = [...higherLevel, ...oneHundredLevel.slice(0, 1)];
+      }
+
+      const requiredAlternativeComplete = !requirement.requiresOneOf ||
+        requirement.requiresOneOf.some((code) => courseByCode.has(code));
+      const complete = candidates.slice(0, requirement.slots);
+      let completedSlots = complete.length;
+      if (requirement.requiresOneOf && !requiredAlternativeComplete) {
+        completedSlots = Math.min(completedSlots, requirement.slots - 1);
+      }
+      complete.slice(0, completedSlots).forEach((course) => usedCodes.add(course.code));
+      let availableCourses = catalog.filter((course) => {
+        const matchesCode = requirement.codes ? requirement.codes.includes(course.code) : requirement.matches(course);
+        const isOneHundredLevel = Number.parseInt(course.number, 10) < 200;
+        return matchesCode && !courseByCode.has(course.code) && !usedCodes.has(course.code) &&
+          (!requirement.maxOneHundredLevel || !hasOneHundredLevelCourse || !isOneHundredLevel);
+      });
+      return {
+        label: requirement.label,
+        slots: requirement.slots,
+        completed: completedSlots,
+        remaining: requirement.slots - completedSlots,
+        satisfiedCourses: complete.slice(0, completedSlots),
+        availableCourses,
+      };
+    });
+
+    return {
+      name: program.name,
+      type: program.type,
+      requirements,
+      completed: requirements.reduce((total, requirement) => total + requirement.completed, 0),
+      total: requirements.reduce((total, requirement) => total + requirement.slots, 0),
+      percent: requirements.length
+        ? Math.round(1000 * requirements.reduce((total, requirement) => total + requirement.completed, 0) /
+          requirements.reduce((total, requirement) => total + requirement.slots, 0)) / 10
+        : null,
+    };
+  }
 
   // Shared color palette.
   const COLORS = {
@@ -92,6 +250,9 @@
       background: ${COLORS.BG};
     }
     .sidebar {
+      display: flex;
+      height: 100vh;
+      flex-direction: column;
       background: ${COLORS.RED};
       padding: 0;
       color: white;
@@ -147,6 +308,15 @@
     }
     .sidebar-button--active {
       background: ${COLORS.DARK_RED};
+    }
+    .sidebar-button--active:hover {
+      background: ${COLORS.DARK_RED};
+    }
+    .sidebar-signout {
+      width: calc(100% - 32px);
+      margin: auto 16px 18px;
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      border-radius: 6px;
     }
     /* Progress parent item. */
     .sidebar-button--parent {
@@ -244,7 +414,7 @@
       border: 1px solid ${COLORS.LINE};
       padding: 14px 18px;
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(7, minmax(0, 1fr));
       gap: 12px;
       margin-bottom: 18px;
     }
@@ -408,8 +578,188 @@
       font-size: 13px;
       line-height: 1.55;
     }
-    .detail-progress-heading,
-    .gars-row-heading {
+    .course-list {
+      overflow: hidden;
+      border: 1px solid ${COLORS.LINE};
+      border-radius: 10px;
+      background: ${COLORS.PANEL};
+    }
+    .course-list-summary {
+      margin: 0;
+      padding: 16px 20px;
+      color: ${COLORS.MUTED};
+      font-size: 13px;
+    }
+    .planner-card {
+      margin-bottom: 18px;
+      padding: 18px;
+      border: 1px solid ${COLORS.LINE};
+      border-radius: 10px;
+      background: ${COLORS.PANEL};
+    }
+    .planner-card-title {
+      margin: 0 0 12px;
+      font-size: 16px;
+    }
+    .course-entry-form {
+      display: grid;
+      grid-template-columns: minmax(200px, 2fr) minmax(110px, .7fr) minmax(100px, .6fr) auto;
+      align-items: end;
+      gap: 12px;
+    }
+    .program-selection-form {
+      display: grid;
+      gap: 18px;
+      max-width: 620px;
+    }
+    .minor-selection-list {
+      display: grid;
+      gap: 10px;
+    }
+    .minor-selection-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 10px;
+    }
+    .planner-field label {
+      display: block;
+      margin-bottom: 5px;
+      color: ${COLORS.MUTED};
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .planner-field input,
+    .planner-field select {
+      width: 100%;
+      min-height: 40px;
+      padding: 8px 10px;
+      border: 1px solid ${COLORS.LINE};
+      border-radius: 6px;
+      background: #fff;
+      color: ${COLORS.INK};
+    }
+    .planner-action {
+      min-height: 40px;
+      padding: 8px 14px;
+      border: 0;
+      border-radius: 6px;
+      background: ${COLORS.RED};
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .planner-action:hover { background: ${COLORS.DARK_RED}; }
+    .planner-action--secondary {
+      border: 1px solid ${COLORS.LINE};
+      background: #fff;
+      color: ${COLORS.INK};
+    }
+    .planner-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .planner-error,
+    .planner-note {
+      margin: 10px 0 0;
+      color: ${COLORS.MUTED};
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .planner-error { color: #a4001d; }
+    .requirement-list,
+    .suggestion-list {
+      display: grid;
+      gap: 12px;
+    }
+    .requirement-item,
+    .suggestion-item {
+      padding: 15px;
+      border: 1px solid ${COLORS.LINE};
+      border-radius: 8px;
+      background: ${COLORS.PANEL};
+    }
+    .requirement-item h3,
+    .suggestion-item h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .requirement-item p,
+    .suggestion-item p {
+      margin: 6px 0 0;
+      color: ${COLORS.MUTED};
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .course-options {
+      max-height: 180px;
+      margin: 8px 0 0;
+      padding: 8px 10px 8px 28px;
+      overflow: auto;
+      border-radius: 6px;
+      background: #f7f7f7;
+      color: ${COLORS.MUTED};
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .suggestion-item {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .suggestion-percent {
+      color: ${COLORS.RED};
+      font-size: 20px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .table-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .table-action {
+      border: 0;
+      padding: 4px 0;
+      background: transparent;
+      color: ${COLORS.DARK_RED};
+      font-size: 12px;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .course-table-wrap {
+      max-height: calc(100vh - 190px);
+      overflow: auto;
+    }
+    .course-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    .course-table th,
+    .course-table td {
+      padding: 12px 20px;
+      border-top: 1px solid ${COLORS.LINE};
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .course-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f4f4f5;
+      color: ${COLORS.MUTED};
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .course-table td:first-child,
+    .course-table td:nth-child(2) {
+      white-space: nowrap;
+      font-weight: 600;
+    }
+    .detail-progress-heading {
       display: flex;
       justify-content: space-between;
       gap: 12px;
@@ -417,12 +767,10 @@
       font-size: 12px;
       font-weight: 700;
     }
-    .detail-progress-heading span:last-child,
-    .gars-row-heading span:last-child {
+    .detail-progress-heading span:last-child {
       color: ${COLORS.DARK_RED};
     }
-    .detail-track,
-    .gars-track {
+    .detail-track {
       width: 100%;
       height: 9px;
       margin-top: 10px;
@@ -430,8 +778,7 @@
       border-radius: 999px;
       background: #f0e8e9;
     }
-    .detail-track-fill,
-    .gars-track-fill {
+    .detail-track-fill {
       height: 100%;
       border-radius: inherit;
       background: linear-gradient(90deg, ${COLORS.RED}, ${COLORS.DARK_RED});
@@ -486,29 +833,6 @@
       margin: 8px 0 0;
       color: #f5dfe2;
       font-size: 12px;
-    }
-    .gars-card {
-      margin-top: 16px;
-    }
-    .gars-list {
-      display: grid;
-      gap: 20px;
-      margin-top: 22px;
-    }
-    .gars-row-heading {
-      font-size: 13px;
-    }
-    .gars-row-heading span:last-child {
-      color: ${COLORS.MUTED};
-      font-size: 11px;
-      font-weight: 600;
-    }
-    .gars-track {
-      height: 7px;
-      margin-top: 9px;
-    }
-    .gars-track-fill {
-      background: ${COLORS.RED};
     }
     .dashboard-links {
       display: grid;
@@ -582,6 +906,7 @@
         display: block;
       }
       .sidebar {
+        height: auto;
         min-height: 0;
         padding: 14px 16px;
       }
@@ -599,7 +924,7 @@
       .sidebar-nav {
         margin-top: 12px;
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 5px;
       }
       .sidebar-button,
@@ -611,6 +936,32 @@
         border: 0;
         border-radius: 6px;
         font-size: 9px;
+      }
+      .course-table th,
+      .course-table td {
+        padding: 10px 12px;
+      }
+      .course-table-wrap {
+        max-height: calc(100vh - 230px);
+      }
+      .course-entry-form {
+        grid-template-columns: 1fr 1fr;
+      }
+      .program-selection-form {
+        max-width: none;
+      }
+      .course-entry-form .planner-field:first-child {
+        grid-column: 1 / -1;
+      }
+      .course-entry-form .planner-actions {
+        grid-column: 1 / -1;
+      }
+      .suggestion-item {
+        flex-direction: column;
+      }
+      .sidebar-signout {
+        width: 100%;
+        margin: 10px 0 0;
       }
       .sidebar-submenu {
         display: contents;
@@ -658,6 +1009,30 @@
     return el;
   };
 
+  function goToPage(pageName) {
+    window.location.href = `${pageName}.html`;
+  }
+
+  function buildSidebarButton({ label, page, active = false, child = false, onClick }) {
+    const button = textNode(
+      "button",
+      `sidebar-button${child ? " sidebar-button--child" : " sidebar-button--parent"}${active ? " sidebar-button--active" : ""}`,
+      label
+    );
+    button.type = "button";
+    if (onClick) button.addEventListener("click", onClick);
+    return button;
+  }
+
+  function buildPageHeader(title, subtitle) {
+    const header = createElement("div", "header");
+    header.append(
+      textNode("h1", "header-title", title),
+      textNode("div", "header-subtitle", subtitle)
+    );
+    return header;
+  }
+
   // Circular progress ring.
   function createProgressRing(label, value, color) {
     const chart = createElement("div", "progress-chart");
@@ -670,9 +1045,17 @@
   }
 
   // Build the identity bar.
-  function buildIdentityBar() {
+  function buildIdentityBar(history) {
     const identityBar = createElement("div", "identity-bar");
-    identityFields.forEach(([label, value]) => {
+    const selection = getProgramSelection();
+    const fields = [
+      ...identityFields.slice(0, 3),
+      ["DECLARED MAJOR", selection.major],
+      ["MINORS", selection.minors.join(", ") || "None"],
+      ...identityFields.slice(3),
+      ["CUMULATIVE GPA", calculateGpa(history) || "Unavailable"],
+    ];
+    fields.forEach(([label, value]) => {
       const cell = createElement("div", "identity-cell");
       cell.append(textNode("span", "identity-label", label), textNode("div", "identity-value", value));
       identityBar.appendChild(cell);
@@ -684,7 +1067,11 @@
   function buildNextCourses() {
     const nextCourses = createElement("div", "next-courses");
     nextCourses.appendChild(textNode("span", "next-courses-label", "Next Courses"));
-    nextCourses.appendChild(textNode("div", "empty-courses", "Your upcoming courses will appear here as you build your plan."));
+    nextCourses.appendChild(textNode("div", "empty-courses", "Add completed courses to view requirement progress and program suggestions."));
+    const button = textNode("button", "table-action", "Open Courses");
+    button.type = "button";
+    button.addEventListener("click", () => goToPage("courses"));
+    nextCourses.appendChild(button);
     return nextCourses;
   }
 
@@ -694,22 +1081,26 @@
     return metric;
   }
 
-  function buildProgramPage(page) {
-    const progress = Math.round(page.progress);
-    const remaining = 100 - progress;
-    const intro = textNode("p", "detail-intro", `Track your ${page.label.toLowerCase()} requirements and keep your academic plan moving forward.`);
-    const grid = createElement("div", "detail-grid");
-    const primary = createElement("section", "detail-card detail-card--primary");
-    primary.append(
-      textNode("p", "detail-eyebrow", `${page.label} at a glance`),
-      textNode("h2", "detail-program", page.program),
-      textNode("p", "detail-copy", `Your progress is based on the requirements completed in your academic plan.`)
-    );
+  function buildProgramProgressCard(label, programName, history, catalog, catalogError) {
+    const program = programDefinitions.find((definition) => definition.name === programName && definition.type === label.toLowerCase());
+    const content = createElement("section", "planner-card");
+    content.appendChild(textNode("h2", "planner-card-title", `${label}: ${programName}`));
+
+    if (!program) {
+      content.appendChild(textNode("p", "planner-note", "Progress is unavailable because this program's requirement data is not included in the current catalog files."));
+      return content;
+    }
+
+    const result = evaluateProgram(program, history, catalog);
+    const progress = result.percent;
     const progressHeading = createElement("div", "detail-progress-heading");
-    progressHeading.append(textNode("span", null, "Requirements completed"), textNode("span", null, `${progress}%`));
+    progressHeading.append(
+      textNode("span", null, `${result.completed} of ${result.total} requirements completed`),
+      textNode("span", null, `${progress}%`)
+    );
     const track = createElement("div", "detail-track");
     track.setAttribute("role", "progressbar");
-    track.setAttribute("aria-label", `${page.label} requirements completed`);
+    track.setAttribute("aria-label", `${label} requirements completed`);
     track.setAttribute("aria-valuemin", "0");
     track.setAttribute("aria-valuemax", "100");
     track.setAttribute("aria-valuenow", String(progress));
@@ -719,112 +1110,546 @@
     const metrics = createElement("div", "detail-metrics");
     metrics.append(
       buildMetric(`${progress}%`, "Completed"),
-      buildMetric(`${remaining}%`, "Remaining"),
-      buildMetric(student.graduation_term, "Projected graduation")
+      buildMetric(String(result.total - result.completed), "Requirement slots remaining"),
+      buildMetric(calculateGpa(history) || "Unavailable", "Cumulative GPA")
     );
-    primary.append(progressHeading, track, metrics);
+    content.append(progressHeading, track, metrics);
+    if (catalogError) content.appendChild(textNode("p", "planner-error", catalogError));
 
-    const side = createElement("aside", "detail-card detail-side-card");
-    side.append(
-      textNode("p", "detail-eyebrow", "Keep your plan on track"),
-      textNode("h2", "detail-program", "What's next?"),
-      textNode("p", "detail-copy", "Review your remaining requirements with your academic advisor and update your plan as you complete courses.")
-    );
-    const sideFoot = createElement("div");
-    sideFoot.append(textNode("p", "detail-side-number", `${remaining}%`), textNode("p", "detail-side-caption", "of your requirements remain"));
-    side.appendChild(sideFoot);
-    grid.append(primary, side);
-    return [intro, grid];
+    const list = createElement("div", "requirement-list");
+    result.requirements.forEach((requirement) => {
+      const item = createElement("article", "requirement-item");
+      item.appendChild(textNode("h3", null, requirement.label));
+      item.appendChild(textNode("p", null, `${requirement.completed} of ${requirement.slots} complete${requirement.remaining ? ` · ${requirement.remaining} remaining` : ""}`));
+      if (requirement.satisfiedCourses.length) {
+        item.appendChild(textNode("p", null, `Counted: ${requirement.satisfiedCourses.map((course) => `${course.code} — ${course.name}`).join("; ")}`));
+      }
+      if (requirement.remaining && requirement.availableCourses.length) {
+        item.appendChild(textNode("p", null, `Available courses (${requirement.availableCourses.length}):`));
+        const options = createElement("ul", "course-options");
+        requirement.availableCourses.forEach((course) => {
+          options.appendChild(textNode("li", null, `${course.code} — ${course.name}`));
+        });
+        item.appendChild(options);
+      }
+      list.appendChild(item);
+    });
+    content.appendChild(list);
+    return content;
   }
 
-  function buildGarsPage() {
-    const totalCompleted = garCategories.reduce((sum, category) => sum + category[1], 0);
-    const totalRequirements = garCategories.reduce((sum, category) => sum + category[2], 0);
-    const completedPercent = Math.round((totalCompleted / totalRequirements) * 100);
-    const intro = textNode("p", "detail-intro", "See how your completed general academic requirements are distributed across each area.");
-    const summary = createElement("section", "detail-card detail-card--primary");
-    const summaryHead = createElement("div", "detail-progress-heading");
-    summaryHead.append(textNode("span", null, "Overall GARS progress"), textNode("span", null, `${totalCompleted} of ${totalRequirements} completed`));
-    const track = createElement("div", "detail-track");
-    track.setAttribute("role", "progressbar");
-    track.setAttribute("aria-label", "Overall GARS requirements completed");
-    track.setAttribute("aria-valuemin", "0");
-    track.setAttribute("aria-valuemax", "100");
-    track.setAttribute("aria-valuenow", String(completedPercent));
-    const fill = createElement("div", "detail-track-fill");
-    fill.style.width = `${completedPercent}%`;
-    track.appendChild(fill);
-    summary.append(textNode("p", "detail-eyebrow", "Requirement overview"), textNode("h2", "detail-program", "General Academic Requirements"), summaryHead, track);
+  async function buildProgramPage(page) {
+    const selection = getProgramSelection();
+    const selectedPrograms = page.label === "Major" ? [selection.major] : selection.minors;
+    const intro = textNode("p", "detail-intro", `Track your ${page.label.toLowerCase()} requirements using courses saved in your demo course history.`);
+    const cards = [];
 
-    const categoryCard = createElement("section", "detail-card gars-card");
-    categoryCard.append(textNode("h2", "panel-title", "Progress by area"));
-    const list = createElement("div", "gars-list");
-    garCategories.forEach(([name, completed, total]) => {
-      const row = createElement("div", "gars-row");
-      const heading = createElement("div", "gars-row-heading");
-      heading.append(textNode("span", null, name), textNode("span", null, `${completed} of ${total} completed`));
-      const rowTrack = createElement("div", "gars-track");
-      rowTrack.setAttribute("role", "progressbar");
-      rowTrack.setAttribute("aria-label", `${name} requirements completed`);
-      rowTrack.setAttribute("aria-valuemin", "0");
-      rowTrack.setAttribute("aria-valuemax", String(total));
-      rowTrack.setAttribute("aria-valuenow", String(completed));
-      const rowFill = createElement("div", "gars-track-fill");
-      rowFill.style.width = `${Math.round((completed / total) * 100)}%`;
-      rowTrack.appendChild(rowFill);
-      row.append(heading, rowTrack);
-      list.appendChild(row);
-    });
-    categoryCard.appendChild(list);
-    return [intro, summary, categoryCard];
+    if (!selectedPrograms.length) {
+      const emptyState = createElement("section", "planner-card");
+      emptyState.appendChild(textNode("h2", "planner-card-title", "No minors selected"));
+      emptyState.appendChild(textNode("p", "planner-note", "Add one or two minors in My Programs to track their progress here."));
+      cards.push(emptyState);
+    } else {
+      let catalog = [];
+      let catalogError = "";
+      try {
+        catalog = await loadCourseCatalog();
+      } catch (error) {
+        catalogError = "Course options could not be loaded.";
+        console.error("Could not load catalog for requirement view:", error);
+      }
+      const history = getCourseHistory();
+      selectedPrograms.forEach((programName) => {
+        cards.push(buildProgramProgressCard(page.label, programName, history, catalog, catalogError));
+      });
+    }
+
+    return [intro, ...cards];
   }
 
   function buildDashboardLinks() {
     const links = createElement("section", "dashboard-links");
+    const selection = getProgramSelection();
     [
-      ["major", "Major requirements", "Explore your Computer Science progress."],
-      ["minor", "Minor requirements", "See your Data Science progress."],
-      ["gars", "General requirements", "Review progress across GARS areas."],
+      ["programs", "My Programs", "Choose your major and up to two minors."],
+      ["major", "Major requirements", `Explore your ${selection.major} progress.`],
+      ["minor", "Minor requirements", selection.minors.length ? `See your ${selection.minors.join(" and ")} progress.` : "Add minors or continue without one."],
+      ["courses", "Course history & catalog", "Add or update completed coursework."],
+      ["opportunities", "Opportunity Finder", "Explore programs matching your courses."],
     ].forEach(([target, title, copy]) => {
       const button = createElement("button", "dashboard-link");
       button.type = "button";
       button.append(textNode("span", "dashboard-link-title", title), textNode("span", "dashboard-link-copy", copy));
-      button.addEventListener("click", () => {
-        window.location.href = `${target}.html`;
-      });
+      button.addEventListener("click", () => goToPage(target));
       links.appendChild(button);
     });
     return links;
   }
 
+  function buildProgramSelectionPage() {
+    const selection = getProgramSelection();
+    const card = createElement("section", "planner-card");
+    card.appendChild(textNode("h2", "planner-card-title", "Choose your academic programs"));
+    card.appendChild(textNode("p", "planner-note", "Select one major and up to two minors. Your choices are saved in this browser and used for your dashboard and requirement progress."));
+    if (apiLoadError) card.appendChild(textNode("p", "planner-error", `Could not load programs from the server: ${apiLoadError}`));
+    if (!majorOptions.length) {
+      card.appendChild(textNode("p", "planner-note", "No major programs are available. Check the backend and Supabase connection."));
+      return card;
+    }
+
+    const form = createElement("form", "program-selection-form");
+    const majorField = createElement("div", "planner-field");
+    const majorLabel = textNode("label", null, "Major");
+    const majorSelect = createElement("select");
+    majorSelect.required = true;
+    majorSelect.setAttribute("aria-label", "Major");
+    majorOptions.forEach((name) => majorSelect.appendChild(new Option(name, name)));
+    majorSelect.value = selection.major;
+    majorField.append(majorLabel, majorSelect);
+
+    const minorGroup = createElement("div", "planner-field");
+    minorGroup.appendChild(textNode("div", "identity-label", "MINORS (OPTIONAL · UP TO 2)"));
+    const minorRows = createElement("div", "minor-selection-list");
+    const minorValues = [...selection.minors];
+    const addMinorButton = textNode("button", "planner-action planner-action--secondary", "Add a minor");
+    addMinorButton.type = "button";
+
+    const renderMinorRows = () => {
+      minorRows.replaceChildren();
+      minorValues.forEach((minor, index) => {
+        const row = createElement("div", "minor-selection-row");
+        const field = createElement("div", "planner-field");
+        const label = textNode("label", null, `Minor ${index + 1}`);
+        const select = createElement("select");
+        select.setAttribute("aria-label", `Minor ${index + 1}`);
+        select.appendChild(new Option("Select a minor", ""));
+        minorOptions.forEach((name) => select.appendChild(new Option(name, name)));
+        select.value = minor;
+        select.addEventListener("change", () => {
+          minorValues[index] = select.value;
+          renderMinorRows();
+        });
+        field.append(label, select);
+
+        const removeButton = textNode("button", "planner-action planner-action--secondary", "Remove");
+        removeButton.type = "button";
+        removeButton.setAttribute("aria-label", `Remove minor ${index + 1}`);
+        removeButton.addEventListener("click", () => {
+          minorValues.splice(index, 1);
+          renderMinorRows();
+        });
+
+        row.append(field, removeButton);
+        minorRows.appendChild(row);
+      });
+      addMinorButton.hidden = minorValues.length >= 2;
+    };
+
+    addMinorButton.addEventListener("click", () => {
+      if (minorValues.length < 2) {
+        minorValues.push("");
+        renderMinorRows();
+      }
+    });
+
+    renderMinorRows();
+    minorGroup.append(minorRows, addMinorButton);
+
+    const error = textNode("p", "planner-error");
+    error.hidden = true;
+    error.setAttribute("role", "alert");
+    const actions = createElement("div", "planner-actions");
+    const saveButton = textNode("button", "planner-action", "Save programs");
+    saveButton.type = "submit";
+    actions.appendChild(saveButton);
+    form.append(majorField, minorGroup, error, actions);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const minors = minorValues.filter(Boolean);
+      if (minors.length !== minorValues.length) {
+        error.textContent = "Choose a minor or remove its empty selection.";
+        error.hidden = false;
+        return;
+      }
+      if (minors.includes(majorSelect.value)) {
+        error.textContent = "Your major cannot also be selected as a minor.";
+        error.hidden = false;
+        return;
+      }
+      if (new Set(minors).size !== minors.length) {
+        error.textContent = "Choose each minor only once.";
+        error.hidden = false;
+        return;
+      }
+      saveProgramSelection({ major: majorSelect.value, minors });
+      goToPage("index");
+    });
+    card.appendChild(form);
+    return card;
+  }
+
+  function buildHistoryEditor(catalog) {
+    const card = createElement("section", "planner-card");
+    card.appendChild(textNode("h2", "planner-card-title", "Completed course history"));
+    card.appendChild(textNode("p", "planner-note", "Choose courses from the live Supabase catalog and save their grade and course units. Course history is stored locally in this browser for the demo."));
+
+    const form = createElement("form", "course-entry-form");
+    const courseField = createElement("div", "planner-field");
+    const courseLabel = textNode("label", null, "Catalog course");
+    const courseInput = createElement("input");
+    courseLabel.htmlFor = "completed-course";
+    courseInput.id = "completed-course";
+    courseInput.type = "text";
+    courseInput.required = true;
+    courseInput.placeholder = "Search by subject and number, e.g. CSI 111";
+    courseInput.setAttribute("list", "catalog-course-options");
+    const options = createElement("datalist");
+    options.id = "catalog-course-options";
+    catalog.forEach((course) => {
+      const option = document.createElement("option");
+      option.value = course.code;
+      option.label = course.name;
+      options.appendChild(option);
+    });
+    courseField.append(courseLabel, courseInput, options);
+
+    const gradeField = createElement("div", "planner-field");
+    const gradeLabel = textNode("label", null, "Grade");
+    const gradeSelect = createElement("select");
+    gradeLabel.htmlFor = "completed-course-grade";
+    gradeSelect.id = "completed-course-grade";
+    gradeSelect.appendChild(new Option("Not entered", ""));
+    Object.keys(LETTER_GRADE_POINTS).forEach((grade) => gradeSelect.appendChild(new Option(grade, grade)));
+    gradeField.append(gradeLabel, gradeSelect);
+
+    const unitsField = createElement("div", "planner-field");
+    const unitsLabel = textNode("label", null, "Course units");
+    const unitsInput = createElement("input");
+    unitsLabel.htmlFor = "completed-course-units";
+    unitsInput.id = "completed-course-units";
+    unitsInput.type = "number";
+    unitsInput.min = "0.5";
+    unitsInput.max = "10";
+    unitsInput.step = "0.5";
+    unitsInput.required = true;
+    unitsInput.setAttribute("aria-label", "Course units");
+    unitsField.append(unitsLabel, unitsInput);
+
+    const actions = createElement("div", "planner-actions");
+    const saveButton = textNode("button", "planner-action", "Add course");
+    saveButton.type = "submit";
+    const cancelButton = textNode("button", "planner-action planner-action--secondary", "Cancel edit");
+    cancelButton.type = "button";
+    cancelButton.hidden = true;
+    actions.append(saveButton, cancelButton);
+    form.append(courseField, gradeField, unitsField, actions);
+    const error = textNode("p", "planner-error");
+    error.hidden = true;
+    error.setAttribute("role", "alert");
+    error.setAttribute("aria-live", "polite");
+    card.append(form, error);
+
+    const historyPanel = createElement("div", "course-list");
+    const historySummary = textNode("p", "course-list-summary");
+    const historyTableWrap = createElement("div", "course-table-wrap");
+    historyPanel.append(historySummary, historyTableWrap);
+    card.appendChild(historyPanel);
+
+    let editingCode = null;
+    function showError(text) {
+      error.textContent = text;
+      error.hidden = !text;
+    }
+    function resetForm() {
+      editingCode = null;
+      form.reset();
+      courseInput.disabled = false;
+      saveButton.textContent = "Add course";
+      cancelButton.hidden = true;
+      showError("");
+    }
+    function renderHistory() {
+      const history = getCourseHistory();
+      const totalUnits = history.reduce((total, course) => total + course.units, 0);
+      const gpa = calculateGpa(history);
+      historySummary.textContent = `${history.length} saved courses · ${totalUnits.toFixed(1)} course units · GPA ${gpa || "unavailable"}`;
+      historyTableWrap.replaceChildren();
+      if (!history.length) {
+        historyTableWrap.appendChild(textNode("p", "course-list-summary", "No completed courses have been entered yet."));
+        return;
+      }
+
+      const table = document.createElement("table");
+      table.className = "course-table";
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      ["Course", "Grade", "Units", "Actions"].forEach((label) => {
+        const cell = textNode("th", null, label);
+        cell.scope = "col";
+        headRow.appendChild(cell);
+      });
+      head.appendChild(headRow);
+      const body = document.createElement("tbody");
+      history.forEach((course) => {
+        const row = document.createElement("tr");
+        [course.code, course.grade || "Not entered", course.units.toFixed(1)].forEach((value) => row.appendChild(textNode("td", null, value)));
+        const actionsCell = document.createElement("td");
+        const actionGroup = createElement("div", "table-actions");
+        const editButton = textNode("button", "table-action", "Edit");
+        editButton.type = "button";
+        editButton.addEventListener("click", () => {
+          editingCode = course.code;
+          courseInput.value = course.code;
+          courseInput.disabled = true;
+          gradeSelect.value = course.grade;
+          unitsInput.value = String(course.units);
+          saveButton.textContent = "Save changes";
+          cancelButton.hidden = false;
+          showError("");
+          courseInput.focus();
+        });
+        const removeButton = textNode("button", "table-action", "Remove");
+        removeButton.type = "button";
+        removeButton.addEventListener("click", () => {
+          saveCourseHistory(getCourseHistory().filter((saved) => saved.code !== course.code));
+          if (editingCode === course.code) resetForm();
+          renderHistory();
+        });
+        actionGroup.append(editButton, removeButton);
+        actionsCell.appendChild(actionGroup);
+        row.appendChild(actionsCell);
+        body.appendChild(row);
+      });
+      table.append(head, body);
+      historyTableWrap.appendChild(table);
+    }
+
+    courseInput.addEventListener("input", () => {
+      const selected = catalog.find((course) => course.code.toLowerCase() === courseInput.value.trim().toLowerCase());
+      if (selected && selected.units) unitsInput.value = String(selected.units);
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      showError("");
+      const selected = catalog.find((course) => course.code.toLowerCase() === courseInput.value.trim().toLowerCase());
+      if (!selected) {
+        showError("Choose a course code from the catalog suggestions.");
+        return;
+      }
+      const units = Number.parseFloat(unitsInput.value);
+      if (!Number.isFinite(units) || units < 0.5 || units > 10) {
+        showError("Enter course units between 0.5 and 10.");
+        return;
+      }
+      const history = getCourseHistory();
+      const record = {
+        code: selected.code,
+        subject: selected.subject,
+        number: selected.number,
+        name: selected.name,
+        grade: gradeSelect.value,
+        units,
+      };
+      if (editingCode) {
+        const index = history.findIndex((course) => course.code === editingCode);
+        if (index < 0) {
+          showError("This course is no longer in your saved history. Refresh the list and try again.");
+          return;
+        }
+        history[index] = record;
+      } else {
+        if (history.some((course) => course.code === selected.code)) {
+          showError("That course is already in your history. Use Edit to change its grade or units.");
+          return;
+        }
+        history.push(record);
+      }
+      saveCourseHistory(history);
+      resetForm();
+      renderHistory();
+    });
+    cancelButton.addEventListener("click", resetForm);
+    renderHistory();
+    return card;
+  }
+
+  async function buildCourseList() {
+    const page = createElement("div");
+    const section = createElement("section", "course-list");
+    const summary = textNode("p", "course-list-summary", "Loading course catalog...");
+    section.appendChild(summary);
+
+    try {
+      const courses = await loadCourseCatalog();
+      const listedCourses = courses;
+      page.appendChild(buildHistoryEditor(listedCourses));
+
+      summary.textContent = `${listedCourses.length.toLocaleString()} courses loaded from Supabase`;
+      const filterInput = createElement("input");
+      filterInput.type = "search";
+      filterInput.placeholder = "Filter catalog by subject, number, or name";
+      filterInput.setAttribute("aria-label", "Filter catalog");
+      filterInput.style.cssText = "width:calc(100% - 32px); margin:0 16px 12px; padding:9px 10px; border:1px solid #dedede; border-radius:6px;";
+      section.appendChild(filterInput);
+      const tableWrap = createElement("div", "course-table-wrap");
+      const table = createElement("table", "course-table");
+      const head = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      ["Subject", "Number", "Name"].forEach((label) => {
+        const cell = textNode("th", null, label);
+        cell.scope = "col";
+        headerRow.appendChild(cell);
+      });
+      head.appendChild(headerRow);
+
+      const body = document.createElement("tbody");
+      const fragment = document.createDocumentFragment();
+      listedCourses.forEach((course) => {
+        const courseRow = document.createElement("tr");
+        [course.subject, course.number, course.name].forEach((value) => {
+          courseRow.appendChild(textNode("td", null, value));
+        });
+        courseRow.dataset.search = `${course.subject} ${course.number} ${course.name}`.toLowerCase();
+        fragment.appendChild(courseRow);
+      });
+      body.appendChild(fragment);
+      table.append(head, body);
+      tableWrap.appendChild(table);
+      section.appendChild(tableWrap);
+      filterInput.addEventListener("input", () => {
+        const query = filterInput.value.trim().toLowerCase();
+        Array.from(body.rows).forEach((row) => {
+          row.hidden = !row.dataset.search.includes(query);
+        });
+      });
+    } catch (error) {
+      summary.textContent = "Could not load the course catalog.";
+      summary.setAttribute("role", "alert");
+      console.error("Could not load the course catalog:", error);
+    }
+    page.appendChild(section);
+    return page;
+  }
+
+  async function buildOpportunityPage() {
+    const history = getCourseHistory();
+    const content = createElement("section", "planner-card");
+    content.appendChild(textNode("h2", "planner-card-title", "Programs closest to your completed coursework"));
+    content.appendChild(textNode("p", "planner-note", "Suggestions are separate from your declarations and use program requirements retrieved from Supabase. Course history remains local demo data."));
+    if (!history.length) {
+      content.appendChild(textNode("p", "planner-note", "Add completed courses in Courses to see ranked program suggestions."));
+      return content;
+    }
+
+    const selection = getProgramSelection();
+    const declaredMajors = new Set([selection.major]);
+    const declaredMinors = new Set(selection.minors);
+    const majorAreas = new Set([...declaredMajors].map((name) => name.toLowerCase()));
+    const candidates = programDefinitions
+      .filter((program) =>
+        !(program.type === "major" && declaredMajors.has(program.name)) &&
+        !(program.type === "minor" && declaredMinors.has(program.name)) &&
+        !(program.type === "minor" && majorAreas.has(program.name.toLowerCase()))
+      )
+      .map((program) => evaluateProgram(program, history))
+      .sort((left, right) =>
+        right.completed - left.completed ||
+        left.name.localeCompare(right.name) ||
+        (left.type === right.type ? 0 : left.type === "major" ? -1 : 1)
+      )
+      .slice(0, 5);
+
+    if (!candidates.length) {
+      content.appendChild(textNode("p", "planner-note", "No eligible programs with usable requirement data are available."));
+      return content;
+    }
+
+    const list = createElement("div", "suggestion-list");
+    candidates.forEach((candidate) => {
+      const item = createElement("article", "suggestion-item");
+      const details = createElement("div");
+      details.append(
+        textNode("h3", null, `${candidate.name} ${candidate.type}`),
+        textNode("p", null, `${candidate.completed} of ${candidate.total} requirements met · ${candidate.total - candidate.completed} remaining`),
+        textNode("p", null, `Counted courses: ${candidate.requirements.flatMap((requirement) => requirement.satisfiedCourses).map((course) => `${course.code} — ${course.name}`).join("; ") || "None yet"}`)
+      );
+      item.append(details, textNode("div", "suggestion-percent", `${candidate.percent}%`));
+      list.appendChild(item);
+    });
+    content.appendChild(list);
+    return content;
+  }
+
   // Set up the page layout.
-  function init() {
-    const currentPage = window.location.pathname.split("/").pop().replace(/\.html$/, "") || "index";
+  async function init() {
+    if (sessionStorage.getItem("pathfinder-demo-authenticated") !== "true") {
+      window.location.replace("login.html");
+      return;
+    }
+
+    try {
+      await loadPrograms();
+    } catch (error) {
+      apiLoadError = error.message || "Unable to load academic programs.";
+      console.error("Could not load programs from the backend:", error);
+    }
+
     const page = pageContent[currentPage];
-    document.title = page ? `${page.title} | PathFinder` : "PathFinder | Muhlenberg Academic Planner";
+    document.title = isCoursesPage ? "Courses | PathFinder" :
+      isOpportunitiesPage ? "Opportunity Finder | PathFinder" :
+      isProgramsPage ? "My Programs | PathFinder" :
+      page ? `${page.title} | PathFinder` : "PathFinder | Muhlenberg Academic Planner";
     document.body.innerHTML = "";
 
     const shell = createElement("div", "pathfinder-shell");
     const sidebar = createElement("aside", "sidebar");
     const sidebarNav = createElement("div", "sidebar-nav");
 
-    // Build the sidebar menu.
-    const progressButton = textNode("button", `sidebar-button sidebar-button--parent${currentPage === "index" ? " sidebar-button--active" : ""}`, "PROGRESS");
+    const progressButton = buildSidebarButton({
+      label: "PROGRESS",
+      page: "index",
+      active: currentPage === "index",
+      onClick: () => goToPage("index")
+    });
     const submenu = createElement("div", "sidebar-submenu is-open");
 
-    ["MAJOR", "MINOR", "GARS"].forEach((label, index) => {
-      const button = textNode("button", `sidebar-button sidebar-button--child${currentPage === label.toLowerCase() ? " sidebar-button--active" : ""}`, label);
-      button.addEventListener("click", () => {
-        window.location.href = `${label.toLowerCase()}.html`;
-      });
-      submenu.appendChild(button);
+    ["MAJOR", "MINOR"].forEach((label) => {
+      const pageName = label.toLowerCase();
+      submenu.appendChild(buildSidebarButton({
+        label,
+        page: pageName,
+        active: currentPage === pageName,
+        child: true,
+        onClick: () => goToPage(pageName)
+      }));
     });
 
-    progressButton.addEventListener("click", () => {
-      window.location.href = "index.html";
+    const coursesButton = buildSidebarButton({
+      label: "COURSES",
+      page: "courses",
+      active: isCoursesPage,
+      onClick: () => goToPage("courses")
+    });
+    const opportunitiesButton = buildSidebarButton({
+      label: "OPPORTUNITIES",
+      page: "opportunities",
+      active: isOpportunitiesPage,
+      onClick: () => goToPage("opportunities")
+    });
+    const programsButton = buildSidebarButton({
+      label: "MY PROGRAMS",
+      page: "programs",
+      active: isProgramsPage,
+      onClick: () => goToPage("programs")
     });
 
-    sidebarNav.append(progressButton, submenu);
+    const signOutButton = textNode("button", "sidebar-button sidebar-signout", "LOG OUT");
+    signOutButton.addEventListener("click", () => {
+      sessionStorage.removeItem("pathfinder-demo-authenticated");
+      window.location.replace("login.html");
+    });
+
+    sidebarNav.append(progressButton, submenu, coursesButton, opportunitiesButton, programsButton);
 
     sidebar.append(
       textNode("div", "sidebar-title", "PathFinder"),
@@ -834,62 +1659,76 @@
       createElement("div", "sidebar-divider"),
       textNode("div", "sidebar-section-label", "CURRENT STUDENT"),
       textNode("div", "student-name", student.name),
-      textNode("div", "student-id", student.student_id)
+      textNode("div", "student-id", student.student_id),
+      signOutButton
     );
 
-    // Main panel setup.
     const main = createElement("main", "main-panel");
-    const header = createElement("div", "header");
-    if (page) {
-      header.append(
-        textNode("h1", "header-title", page.title),
-        textNode("div", "header-subtitle", page.subtitle)
-      );
-      const pageSections = currentPage === "gars" ? buildGarsPage() : buildProgramPage(page);
-      main.append(header, ...pageSections);
+    let header = null;
+
+    if (isCoursesPage) {
+      header = buildPageHeader("Courses", "COURSE CATALOG · SUPABASE");
+      main.appendChild(header);
       shell.append(sidebar, main);
-      document.body.appendChild(shell);
+      document.body.append(shell);
+      main.appendChild(await buildCourseList());
+      return;
+    }
+    if (isOpportunitiesPage) {
+      header = buildPageHeader("Opportunity Finder", "PROGRAM SUGGESTIONS BASED ON COMPLETED COURSES");
+      main.append(header, await buildOpportunityPage());
+      shell.append(sidebar, main);
+      document.body.append(shell);
+      return;
+    }
+    if (isProgramsPage) {
+      header = buildPageHeader("My Programs", "CHOOSE YOUR MAJOR AND UP TO TWO MINORS");
+      main.append(header, buildProgramSelectionPage());
+      shell.append(sidebar, main);
+      document.body.append(shell);
+      return;
+    }
+    if (page) {
+      header = buildPageHeader(page.title, page.subtitle);
+      main.append(header, ...await buildProgramPage(page));
+      shell.append(sidebar, main);
+      document.body.append(shell);
       return;
     }
 
-    const remainingCredits = student.credits_required - student.credits_completed;
-    const statusText = remainingCredits <= 30 ? "On track for graduation" : "Planning ahead";
-    const statusBadge = createElement("div", "status-badge");
-    const statusDot = createElement("span", "status-dot");
-    const statusLabel = textNode("span", null, `${statusText} · ${remainingCredits} credits remaining`);
-    statusBadge.append(statusDot, statusLabel);
-
-    header.append(
-      textNode("h1", "header-title", "PathFinder"),
-      textNode("div", "header-subtitle", "A CLEAR VIEW OF WHAT YOU HAVE COMPLETED AND WHAT COMES NEXT."),
-      statusBadge
-    );
+    header = buildPageHeader("PathFinder", "A CLEAR VIEW OF WHAT YOU HAVE COMPLETED AND WHAT COMES NEXT.");
 
     const contentCard = createElement("section", "content-card");
     contentCard.appendChild(textNode("h2", "panel-title", "Progress"));
+    if (apiLoadError) contentCard.appendChild(textNode("p", "planner-error", `Academic programs could not be loaded: ${apiLoadError}`));
 
-    // Build the progress rings.
+    const history = getCourseHistory();
+    const selection = getProgramSelection();
+    const majorProgram = programDefinitions.find((definition) => definition.name === selection.major && definition.type === "major");
+    const majorProgress = majorProgram ? evaluateProgram(majorProgram, history).percent : null;
+    const completedUnits = history.reduce((total, course) => total + course.units, 0);
+
     const charts = createElement("div", "progress-charts");
-    const { major_progress, minor_progress, credits_completed, credits_required } = student;
-    // GARS percentage.
-    const garProgress = Math.round(
-      (garCategories.reduce((sum, item) => sum + item[1], 0) /
-        garCategories.reduce((sum, item) => sum + item[2], 0)) * 100
-    );
-    // Overall credit percentage.
-    const overall = Math.round((credits_completed / credits_required) * 100);
-
-    charts.append(
-      createProgressRing("MAJOR", Math.round(major_progress), COLORS.RED),
-      createProgressRing("MINOR", Math.round(minor_progress), COLORS.DARK_RED),
-      createProgressRing("GARS", garProgress, COLORS.RED),
-      createProgressRing("OVERALL", overall, COLORS.GREEN)
-    );
+    if (majorProgress !== null) charts.appendChild(createProgressRing(`MAJOR · ${selection.major}`, majorProgress, COLORS.RED));
+    selection.minors.forEach((minor) => {
+      const minorProgram = programDefinitions.find((definition) => definition.name === minor && definition.type === "minor");
+      if (minorProgram) {
+        const progress = evaluateProgram(minorProgram, history).percent;
+        charts.appendChild(createProgressRing(`MINOR · ${minor}`, progress, COLORS.DARK_RED));
+      } else {
+        charts.appendChild(textNode("div", "planner-note", `${minor} minor progress is unavailable because its requirements are not loaded.`));
+      }
+    });
+    if (!selection.minors.length) {
+      charts.appendChild(textNode("div", "planner-note", "No minors selected. Add one or two in My Programs whenever you like."));
+    }
+    charts.appendChild(createProgressRing("GRADUATION UNITS", Math.min(100, Math.round(completedUnits / 32 * 100)), COLORS.GREEN));
+    charts.appendChild(buildMetric(`${completedUnits.toFixed(1)} / 32`, "Course units earned"));
 
     contentCard.append(charts, buildNextCourses());
-    main.append(header, buildIdentityBar(), contentCard, buildDashboardLinks());
+    main.append(header, buildIdentityBar(history), contentCard, buildDashboardLinks());
     shell.append(sidebar, main);
-    document.body.appendChild(shell);
+    document.body.append(shell);
   }
 
   if (document.readyState === "loading") {
