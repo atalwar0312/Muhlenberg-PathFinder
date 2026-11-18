@@ -1,6 +1,6 @@
 # Repository organization guide
 
-This file explains the existing layout. It does **not** move or delete application code.
+This file explains the repository layout and the proposed cleanup of duplicate root-level UI files. The cleanup is staged in a separate pull request until hosting and links are checked.
 
 ## Primary folders
 
@@ -12,14 +12,9 @@ This file explains the existing layout. It does **not** move or delete applicati
 - `.github/workflows/`: CI and GitHub Pages publishing.
 - `git-practice/`: original class Git exercises.
 
-## Duplicate frontend files at repository root
+## Proposed removal of duplicate root-level frontend files
 
-The repository currently includes two UI file groups:
-
-- `pathfinder/frontend/UI/` — the frontend served by the Express backend.
-- Root-level `Main.js`, `index.html`, `login.js`, `login.html`, other pages, assets, and `course-catalog.csv` — a separate existing copy.
-
-Some copies have different revisions. **Do not consolidate by blindly copying or deleting**: first verify GitHub Pages, Render, relative asset URLs, and any external links. Canonical development should target `pathfinder/frontend/UI/`.
+The cleanup branch removes 13 redundant root-level UI files, including `Main.js`, HTML, CSS, images, and `course-catalog.csv`. The application copy remains in `pathfinder/frontend/UI/` without modification. The Express app serves that folder, and the GitHub Pages workflow explicitly copies it into its deployment artifact. This is not yet proof that every external link to a root-level file is safe to remove; confirm that before merging.
 
 ## Documentation folders
 
@@ -37,15 +32,13 @@ Some copies have different revisions. **Do not consolidate by blindly copying or
 | `docs/assets/` | Brand images |
 | `docs/references/` | Historical references |
 
-## Safe cleanup backlog (not executed)
+## Remaining cleanup checks
 
-1. Inventory all references to root-level UI files and identify whether any published sites still depend on them.
-2. Compare root UI content with `pathfinder/frontend/UI/`; do not assume they are identical.
-3. Decide with the team whether to keep the root site for GitHub Pages compatibility or replace it with explicit redirects.
-4. Update the README after confirming any real Supabase/backend or HAL API integration. Avoid overstating prototype capabilities.
-5. Add missing weekly reports and newer course presentations only after checking the team's agreed versions.
-6. Consider pinning Node.js versions consistently between local, GitHub Actions, and Render.
-7. Validate frontend assets and logout behavior in a browser in addition to backend tests.
+1. Before merging this PR, verify no external URLs depend on root-level HTML and confirm the active GitHub Pages deployment source is the included workflow.
+2. Confirm Render and GitHub Pages still work on the proposed branch, and avoid merging shortly before the live demo.
+3. Update the README when real Supabase/backend or HAL integration is verified.
+4. Add missing reports/presentations after checking agreed team versions.
+5. Align Node versions and add browser-level testing when practical.
 
 ## Live demo safety
 
