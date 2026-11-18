@@ -23,9 +23,8 @@ PathFinder is a student academic-planning prototype for Muhlenberg College. The 
 | `.github/workflows/` | Automated CI and GitHub Pages workflows |
 | `pathfinder/config/` | Reserved for non-secret application configuration |
 | `git-practice/` | Historical coursework / Git practice |
-| Repository-root HTML/JS/assets | Existing duplicate UI snapshot. **Do not delete or move without first checking all hosting and links.** |
 
-See [REPOSITORY_GUIDE.md](REPOSITORY_GUIDE.md) for what to edit, what to avoid, and safe future cleanup.
+See [REPOSITORY_GUIDE.md](REPOSITORY_GUIDE.md) for the project layout and notes about the proposed removal of duplicate root-level frontend files.
 
 ## Run locally
 
