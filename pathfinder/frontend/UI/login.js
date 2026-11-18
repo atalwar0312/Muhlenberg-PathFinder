@@ -1,6 +1,6 @@
-const SESSION_KEY = 'pathfinder-demo-authenticated';
-const DEMO_EMAIL = 'demo@muhlenberg.edu';
-const DEMO_PASSWORD = 'PathfinderDemo1!';
+const SESSION_KEY = 'pathfinder-authenticated';
+const SIGN_IN_EMAIL = 'demo@muhlenberg.edu';
+const SIGN_IN_PASSWORD = 'PathfinderDemo1!';
 const form = document.getElementById('login-form');
 const email = document.getElementById('email');
 const password = document.getElementById('password');
@@ -36,16 +36,12 @@ form.addEventListener('submit', (event) => {
   message.hidden = true;
   const address = email.value.trim().toLowerCase();
   const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address);
-  setError(email, !address ? 'Please enter the demo email.' : !validEmail ? 'Enter a valid email address.' : '');
+  setError(email, !address ? 'Please enter your email address.' : !validEmail ? 'Enter a valid email address.' : '');
   setError(password, password.value ? '' : 'Please enter the password.');
   if (!validEmail || !password.value) return;
 
-  if (address !== DEMO_EMAIL) {
-    setError(email, 'Use the demo account email shown above.');
-    return;
-  }
-  if (password.value !== DEMO_PASSWORD) {
-    setError(password, 'That demo password is incorrect.');
+  if (address !== SIGN_IN_EMAIL || password.value !== SIGN_IN_PASSWORD) {
+    showMessage('The email address or password is incorrect.');
     return;
   }
 
@@ -54,5 +50,5 @@ form.addEventListener('submit', (event) => {
 });
 
 document.getElementById('forgot-password').addEventListener('click', () => {
-  showMessage('Password reset is not available for the demo account.');
+  showMessage('Password reset is not available. Contact the Muhlenberg IT department for assistance.');
 });
