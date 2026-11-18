@@ -20,11 +20,6 @@ function showMessage(text) {
   message.hidden = false;
 }
 
-if (new URLSearchParams(window.location.search).get('signed_out') === '1') {
-  showMessage('You have successfully logged out.');
-  window.history.replaceState(null, '', window.location.pathname);
-}
-
 togglePassword.addEventListener('click', () => {
   const visible = password.type === 'password';
   password.type = visible ? 'text' : 'password';

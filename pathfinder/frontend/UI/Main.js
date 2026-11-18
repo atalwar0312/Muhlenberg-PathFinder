@@ -44,7 +44,7 @@
       name: "Computer Science",
       type: "major",
       requirements: [
-        { label: "Computer Science I", matches: (course) => course.subject === "CSI" && course.name.includes("Computer Science I"), slots: 1 },
+        { label: "Computer Science I", matches: (course) => course.subject === "CSI" && /^Computer Science I(?::|$)/.test(course.name), slots: 1 },
         { label: "CSI 111 — Computer Science II", codes: ["CSI 111"], slots: 1 },
         { label: "CSI 210 — Software Engineering", codes: ["CSI 210"], slots: 1 },
         { label: "CSI 220 — Data Structures & Algorithms", codes: ["CSI 220"], slots: 1 },
@@ -104,13 +104,11 @@
   ];
 
   const PROGRAM_SELECTION_KEY = "pathfinder-program-selection";
-  const initialProgramSelection = { major: "Computer Science", minors: ["Data Science"] };
+  const initialProgramSelection = { major: "Computer Science", minors: [] };
   const majorOptions = [...new Set(programDefinitions.filter((program) => program.type === "major").map((program) => program.name))];
-  const minorOptions = [...new Set([
-    ...programDefinitions.filter((program) => program.type === "minor").map((program) => program.name),
-    "Data Science",
-  ])];
+  const minorOptions = [...new Set(programDefinitions.filter((program) => program.type === "minor").map((program) => program.name))];
   const isProgramsPage = currentPage === "programs";
+  let unsupportedMinorsRemoved = false;
 
   function getProgramSelection() {
     const stored = localStorage.getItem(PROGRAM_SELECTION_KEY);
@@ -118,9 +116,16 @@
 
     const selection = JSON.parse(stored);
     if (!selection || !majorOptions.includes(selection.major) || !Array.isArray(selection.minors) ||
-      selection.minors.length > 2 || selection.minors.some((minor) => !minorOptions.includes(minor) || minor === selection.major) ||
+      selection.minors.length > 2 || selection.minors.some((minor) => typeof minor !== "string" || minor === selection.major) ||
       new Set(selection.minors).size !== selection.minors.length) {
       throw new Error("Saved major and minor selections are invalid.");
+    }
+    const supportedMinors = selection.minors.filter((minor) => minorOptions.includes(minor));
+    if (supportedMinors.length !== selection.minors.length) {
+      unsupportedMinorsRemoved = true;
+      const updatedSelection = { major: selection.major, minors: supportedMinors };
+      saveProgramSelection(updatedSelection);
+      return updatedSelection;
     }
     return selection;
   }
@@ -139,6 +144,18 @@
 
   function saveCourseHistory(history) {
     localStorage.setItem(COURSE_HISTORY_KEY, JSON.stringify(history));
+  }
+
+  function isBlockedAsFirstComputerScienceCourse(course, history, editingCode = null) {
+    const selection = getProgramSelection();
+    if (selection.major !== "Computer Science") return false;
+    if (!["CSI 111", "CSI 970"].includes(course.code)) return false;
+    const remainingHistory = editingCode
+      ? history.filter((saved) => saved.code !== editingCode)
+      : history;
+    return !remainingHistory.some((saved) =>
+      saved.subject === "CSI" && !["CSI 111", "CSI 970"].includes(saved.code)
+    );
   }
 
   function calculateGpa(history) {
@@ -828,40 +845,64 @@
       color: #f5dfe2;
       font-size: 12px;
     }
-    .dashboard-links {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-      margin-top: 16px;
+    .dashboard-page .header-title {
+      font-size: 32px;
     }
-    .dashboard-link {
-      position: relative;
-      display: block;
-      padding: 17px 18px;
-      text-align: left;
-      border: 1px solid ${COLORS.LINE};
-      border-radius: 9px;
-      background: ${COLORS.PANEL};
-      color: ${COLORS.INK};
-      cursor: pointer;
-      transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
-    }
-    .dashboard-link:hover {
-      border-color: ${COLORS.RED};
-      box-shadow: 0 5px 16px rgba(36, 36, 36, 0.07);
-      transform: translateY(-2px);
-    }
-    .dashboard-link-title {
-      display: block;
+    .dashboard-page .header-subtitle {
       font-size: 12px;
-      font-weight: 700;
     }
-    .dashboard-link-copy {
-      display: block;
-      margin-top: 5px;
-      color: ${COLORS.MUTED};
+    .dashboard-page .identity-bar {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .dashboard-page .identity-label {
+      font-size: 10px;
+    }
+    .dashboard-page .identity-value {
+      max-width: none;
+      font-size: 14px;
+    }
+    .dashboard-page .content-card {
+      min-height: 0;
+      padding: 20px 22px;
+    }
+    .dashboard-page .panel-title {
+      font-size: 18px;
+      margin-bottom: 14px;
+    }
+    .dashboard-page .progress-charts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .dashboard-page .progress-ring {
+      width: 108px;
+      height: 108px;
+    }
+    .dashboard-page .progress-ring-value {
+      font-size: 16px;
+    }
+    .dashboard-page .progress-chart-label {
       font-size: 11px;
-      line-height: 1.45;
+      line-height: 1.35;
+      text-align: center;
+    }
+    .dashboard-page .detail-metric-value {
+      font-size: 20px;
+    }
+    .dashboard-page .detail-metric-label {
+      font-size: 12px;
+    }
+    .dashboard-page .next-courses-label {
+      font-size: 11px;
+    }
+    .dashboard-page .empty-courses {
+      font-size: 14px;
+      padding: 12px 14px;
     }
     .empty-courses {
       padding: 14px 16px;
@@ -1081,6 +1122,9 @@
       .header-title {
         font-size: 26px;
       }
+      .dashboard-page .header-title {
+        font-size: 28px;
+      }
       .identity-bar {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -1093,9 +1137,6 @@
         padding: 19px;
       }
       .detail-metrics {
-        grid-template-columns: 1fr;
-      }
-      .dashboard-links {
         grid-template-columns: 1fr;
       }
       .hal-widget {
@@ -1282,30 +1323,15 @@
     return [intro, ...cards];
   }
 
-  function buildDashboardLinks() {
-    const links = createElement("section", "dashboard-links");
-    const selection = getProgramSelection();
-    [
-      ["programs", "My Programs", "Choose your major and up to two minors."],
-      ["major", "Major requirements", `Explore your ${selection.major} progress.`],
-      ["minor", "Minor requirements", selection.minors.length ? `See your ${selection.minors.join(" and ")} progress.` : "Add minors or continue without one."],
-      ["courses", "Course history & catalog", "Add or update completed coursework."],
-      ["opportunities", "Opportunity Finder", "Explore programs matching your courses."],
-    ].forEach(([target, title, copy]) => {
-      const button = createElement("button", "dashboard-link");
-      button.type = "button";
-      button.append(textNode("span", "dashboard-link-title", title), textNode("span", "dashboard-link-copy", copy));
-      button.addEventListener("click", () => goToPage(target));
-      links.appendChild(button);
-    });
-    return links;
-  }
-
   function buildProgramSelectionPage() {
     const selection = getProgramSelection();
     const card = createElement("section", "planner-card");
     card.appendChild(textNode("h2", "planner-card-title", "Choose your academic programs"));
     card.appendChild(textNode("p", "planner-note", "Select one major and up to two minors. Your choices are saved in this browser and used for your dashboard and requirement progress."));
+    card.appendChild(textNode("p", "planner-note", "Current requirement data is available for Computer Science and Mathematics. Other programs are not selectable yet."));
+    if (unsupportedMinorsRemoved) {
+      card.appendChild(textNode("p", "planner-error", "A saved minor was removed because its requirement data is not available."));
+    }
 
     const form = createElement("form", "program-selection-form");
     const majorField = createElement("div", "planner-field");
@@ -1476,6 +1502,7 @@
     const card = createElement("section", "planner-card");
     card.appendChild(textNode("h2", "planner-card-title", "Completed course history"));
     card.appendChild(textNode("p", "planner-note", "Choose courses from the catalog and save their grade and course units. Records are stored locally in this browser."));
+    card.appendChild(textNode("p", "planner-note", "Computer Science majors must complete another CSI course before CSI 111 or CSI 970."));
 
     const form = createElement("form", "course-entry-form");
     const courseField = createElement("div", "planner-field");
@@ -1620,12 +1647,16 @@
         showError("Choose a course code from the catalog suggestions.");
         return;
       }
+      const history = getCourseHistory();
+      if (isBlockedAsFirstComputerScienceCourse(selected, history, editingCode)) {
+        showError("CSI 111 and CSI 970 cannot be your first Computer Science major course.");
+        return;
+      }
       const units = Number.parseFloat(unitsInput.value);
       if (!Number.isFinite(units) || units < 0.5 || units > 10) {
         showError("Enter course units between 0.5 and 10.");
         return;
       }
-      const history = getCourseHistory();
       const record = {
         code: selected.code,
         subject: selected.subject,
@@ -1932,22 +1963,10 @@
     });
 
     const signOutButton = textNode("button", "sidebar-button sidebar-signout", "LOG OUT");
-
-    
     signOutButton.addEventListener("click", () => {
       sessionStorage.removeItem("pathfinder-authenticated");
-      window.location.replace("login.html?signed_out=1");
+      window.location.replace("login.html");
     });
-
-    // signOutButton.addEventListener("click", () => {
-    //   const confirmed = window.confirm(
-    //     "Are you sure you want to log out of PathFinder?"
-    //   );
-    //   if (!confirmed) return;
-    //   sessionStorage.removeItem("pathfinder-authenticated");
-    //   window.location.replace("login.html?signed_out=1");
-    // });
-
 
     sidebarNav.append(progressButton, submenu, coursesButton, opportunitiesButton, programsButton);
 
@@ -1963,7 +1982,7 @@
       signOutButton
     );
 
-    const main = createElement("main", "main-panel");
+    const main = createElement("main", `main-panel${currentPage === "index" ? " dashboard-page" : ""}`);
     let header = null;
 
     if (isCoursesPage) {
@@ -2025,7 +2044,7 @@
     charts.appendChild(buildMetric(`${completedUnits.toFixed(1)} / 32`, "Course units earned"));
 
     contentCard.append(charts, buildNextCourses());
-    main.append(header, buildIdentityBar(history), contentCard, buildDashboardLinks());
+    main.append(header, buildIdentityBar(history), contentCard);
     shell.append(sidebar, main);
     document.body.append(shell, buildHalChatWidget());
   }
