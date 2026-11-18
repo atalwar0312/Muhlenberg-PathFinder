@@ -5,6 +5,7 @@ export function createProgramRoutes(supabase) {
   const router = Router();
   const controller = createProgramController(supabase);
   router.get("/", controller.listPrograms);
+  router.get("/complete", controller.listProgramsWithRequirements);
   router.get("/:id/requirements", controller.getRequirements);
   router.get("/:id", controller.getProgram);
   return router;

@@ -159,3 +159,46 @@ test("requirement matcher supports exact courses and bounded course-number range
     { prefix: "CSC", number: null, min_number: 200, max_number: 299 }
   ), false);
 });
+
+
+test("combined program endpoint batches requirements and items for all programs", async () => {
+  const queryTables = [];
+  const results = {
+    programs: [
+      { id: 3, name: "Computer Science", type: "major" },
+      { id: 4, name: "Computer Science", type: "minor" }
+    ],
+    requirements: [
+      { id: 30, program_id: 3, name: "Core", courses_required: 1 },
+      { id: 40, program_id: 4, name: "Elective", courses_required: 1 }
+    ],
+    requirements_items: [
+      { id: 300, requirement_id: 30, prefix: "CSI", number: "111" },
+      { id: 400, requirement_id: 40, prefix: "CSI", number: "220" }
+    ]
+  };
+  const supabase = {
+    from(table) {
+      queryTables.push(table);
+      const builder = {};
+      for (const method of ["select", "eq", "order", "limit", "in"]) {
+        builder[method] = (..._args) => builder;
+      }
+      builder.then = (resolve, reject) => Promise.resolve({
+        data: results[table] ?? [],
+        error: null
+      }).then(resolve, reject);
+      return builder;
+    }
+  };
+
+  await withServer(supabase, async (base) => {
+    const response = await fetch(`${base}/api/programs/complete`);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.data.length, 2);
+    assert.equal(body.data[0].requirements[0].items[0].number, "111");
+    assert.equal(body.data[1].requirements[0].items[0].number, "220");
+    assert.deepEqual(queryTables, ["programs", "requirements", "requirements_items"]);
+  });
+});

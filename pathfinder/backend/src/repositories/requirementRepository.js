@@ -3,13 +3,14 @@ const ITEM_COLUMNS = "id,requirement_id,prefix,number,min_number,max_number";
 
 export function createRequirementRepository(supabase) {
   return {
-    async findRequirementsByProgramId(programId) {
-      if (!supabase) return [];
+    async findRequirementsByProgramIds(programIds) {
+      if (!supabase || !programIds.length) return [];
       const { data: requirements, error } = await supabase.from("requirements")
         .select(REQUIREMENT_COLUMNS)
-        .eq("program_id", programId)
+        .in("program_id", programIds)
+        .order("program_id", { ascending: true })
         .order("sort_order", { ascending: true })
-        .limit(500);
+        .limit(2000);
       if (error) throw error;
       if (!requirements?.length) return [];
 
@@ -18,7 +19,7 @@ export function createRequirementRepository(supabase) {
         .select(ITEM_COLUMNS)
         .in("requirement_id", requirementIds)
         .order("id", { ascending: true })
-        .limit(2000);
+        .limit(10000);
       if (itemError) throw itemError;
 
       const byRequirement = new Map(requirements.map((item) => [item.id, []]));
@@ -27,6 +28,11 @@ export function createRequirementRepository(supabase) {
         ...requirement,
         items: byRequirement.get(requirement.id) ?? []
       }));
+    },
+
+    async findRequirementsByProgramId(programId) {
+      const rows = await this.findRequirementsByProgramIds([programId]);
+      return rows;
     }
   };
 }

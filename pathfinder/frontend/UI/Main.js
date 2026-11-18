@@ -3,10 +3,10 @@
 (function () {
   // Student details for the planner.
   const student = {
-    name: "Andrew Jarrah",
-    student_id: "0000000000",
-    class_year: "Junior",
-    graduation_term: "Spring 2028",
+    name: "Student profile unavailable",
+    student_id: "Not connected",
+    class_year: "Not available",
+    graduation_term: "Not available",
   };
 
   // Top summary fields.
@@ -34,87 +34,179 @@
   const isHistoryPage = currentPage === "history";
   const isOpportunitiesPage = currentPage === "opportunities";
   const COURSE_HISTORY_KEY = "pathfinder-course-history";
-  const COURSE_CATALOG_URL = "../../../data/sample/2026-27%20Catalog%20course%20export%20-%20Sheet1.csv";
+  const API_BASE_URL = "/api";
   const LETTER_GRADE_POINTS = {
     "A+": 4, A: 4, "A-": 3.7, "B+": 3.3, B: 3, "B-": 2.7,
     "C+": 2.3, C: 2, "C-": 1.7, "D+": 1.3, D: 1, "D-": 0.7, F: 0,
   };
-  // Program and course information is loaded from the Express API (which reads Supabase).
-  let programDefinitions = [];
-  let majorOptions = [];
-  let minorOptions = [];
-  let courseCatalogCache = null;
-  let apiLoadError = "";
+  let programDefinitions = [
+    {
+      name: "Computer Science",
+      type: "major",
+      requirements: [
+        { label: "Computer Science I", matches: (course) => course.subject === "CSI" && course.name.includes("Computer Science I"), slots: 1 },
+        { label: "CSI 111 — Computer Science II", codes: ["CSI 111"], slots: 1 },
+        { label: "CSI 210 — Software Engineering", codes: ["CSI 210"], slots: 1 },
+        { label: "CSI 220 — Data Structures & Algorithms", codes: ["CSI 220"], slots: 1 },
+        { label: "CSI 240 — Computer Organization", codes: ["CSI 240"], slots: 1 },
+        { label: "CSI 370 — CUE: Computer Science Seminar", codes: ["CSI 370"], slots: 1 },
+        { label: "STA 119 or MTH 226", codes: ["STA 119", "MTH 226"], slots: 1 },
+        { label: "Three additional CSI electives numbered 300 or higher", matches: (course) => course.subject === "CSI" && Number.parseInt(course.number, 10) >= 300 && course.number !== "370", slots: 3 },
+      ],
+    },
+    {
+      name: "Computer Science",
+      type: "minor",
+      requirements: [
+        { label: "Two CSI electives numbered 300 or higher", matches: (course) => course.subject === "CSI" && Number.parseInt(course.number, 10) >= 300, slots: 2 },
+      ],
+    },
+    {
+      name: "Mathematics",
+      type: "major",
+      requirements: [
+        { label: "STA 119 — Statistical Analysis", codes: ["STA 119"], slots: 1 },
+        { label: "MTH 121 — Calculus I", codes: ["MTH 121"], slots: 1 },
+        { label: "MTH 122 — Calculus II", codes: ["MTH 122"], slots: 1 },
+        { label: "MTH 223 — Calculus III", codes: ["MTH 223"], slots: 1 },
+        { label: "MTH 226 — Linear Algebra", codes: ["MTH 226"], slots: 1 },
+        { label: "MTH 240 — Transition to Abstract Mathematics", codes: ["MTH 240"], slots: 1 },
+        { label: "Any 100-level Computer Science course", matches: (course) => course.subject === "CSI" && Number.parseInt(course.number, 10) >= 100 && Number.parseInt(course.number, 10) < 200, slots: 1 },
+        { label: "Mathematics CUE: MTH 975 or MTH 353", codes: ["MTH 975", "MTH 353"], slots: 1 },
+        {
+          label: "Four MTH courses numbered 300 or higher, including MTH 326 or MTH 337",
+          matches: (course) => course.subject === "MTH" && Number.parseInt(course.number, 10) >= 300,
+          slots: 4,
+          requiresOneOf: ["MTH 326", "MTH 337"],
+        },
+        {
+          label: "One additional MTH or STA course numbered 200 or higher",
+          matches: (course) => ["MTH", "STA"].includes(course.subject) && Number.parseInt(course.number, 10) >= 200,
+          slots: 1,
+        },
+      ],
+    },
+    {
+      name: "Mathematics",
+      type: "minor",
+      requirements: [
+        {
+          label: "Three courses: MTH 120, any MTH 200+, or any 100-level CSI (at most one 100-level course)",
+          matches: (course) =>
+            course.code === "MTH 120" ||
+            (course.subject === "MTH" && Number.parseInt(course.number, 10) >= 200) ||
+            (course.subject === "CSI" && Number.parseInt(course.number, 10) >= 100 && Number.parseInt(course.number, 10) < 200),
+          slots: 3,
+          maxOneHundredLevel: true,
+        },
+      ],
+    },
+  ];
 
-  const PROGRAM_SELECTION_KEY = "pathfinder-program-selection";
-  const initialProgramSelection = { major: "", minors: [] };
-  const isProgramsPage = currentPage === "programs";
+  const API_CACHE_PREFIX = "pathfinder-api-cache:";
+  const API_CACHE_TTL_MS = 5 * 60 * 1000;
 
   async function apiGet(path) {
-    const response = await fetch(path, { headers: { Accept: "application/json" } });
-    let payload;
-    try { payload = await response.json(); }
-    catch { throw new Error(`The server returned an invalid response (${response.status}).`); }
-    if (!response.ok) throw new Error(payload?.error || `Request failed (${response.status}).`);
-    return payload?.data ?? payload;
+    const cacheKey = `${API_CACHE_PREFIX}${path}`;
+    let cached = null;
+    try {
+      const stored = sessionStorage.getItem(cacheKey);
+      if (stored) cached = JSON.parse(stored);
+    } catch {
+      cached = null;
+    }
+
+    if (cached?.savedAt && Date.now() - cached.savedAt < API_CACHE_TTL_MS) {
+      return cached.payload;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin",
+      });
+      let payload;
+      try { payload = await response.json(); } catch { payload = null; }
+      if (!response.ok) {
+        throw new Error(payload?.error || `API request failed (${response.status})`);
+      }
+      try {
+        sessionStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), payload }));
+      } catch {
+        // Storage can be unavailable or full; the live response remains usable.
+      }
+      return payload;
+    } catch (error) {
+      // Keep the last known catalog usable during a temporary network outage.
+      if (cached?.payload) return cached.payload;
+      throw error;
+    }
   }
 
-  function normalizeCourse(row) {
+  function normalizeApiCourse(row) {
     const subject = String(row.prefix ?? row.subject ?? "").trim();
     const number = String(row.number ?? "").trim();
+    const name = String(row.name ?? row.title ?? "").trim();
+    const hasUnits = row.units !== null && row.units !== undefined && String(row.units).trim() !== "";
+    const parsedUnits = hasUnits ? Number(row.units) : null;
     return {
-      ...row,
+      id: row.id,
       subject,
+      prefix: subject,
       number,
+      name,
       code: `${subject} ${number}`.trim(),
-      name: String(row.name ?? row.title ?? "").trim(),
-      units: Number.isFinite(Number(row.units)) ? Number(row.units) : null,
+      units: Number.isFinite(parsedUnits) && parsedUnits >= 0 ? parsedUnits : null,
+      prerequisites: row.prerequisites_text ?? "",
+      description: row.description ?? "",
+      gar: row.gar ?? null,
     };
   }
 
-  function requirementMatchesCourse(requirement, course) {
-    const code = String(course.code || `${course.subject} ${course.number}`).trim().toUpperCase();
-    return (requirement.items || []).some((item) => {
-      const prefix = String(item.prefix || "").trim().toUpperCase();
-      if (prefix && prefix !== String(course.subject || "").trim().toUpperCase()) return false;
-      const number = String(item.number || "").trim();
-      if (number) return number.toUpperCase() === String(course.number || "").trim().toUpperCase();
-      const courseNumber = Number.parseInt(course.number, 10);
-      const min = item.min_number == null ? null : Number(item.min_number);
-      const max = item.max_number == null ? null : Number(item.max_number);
-      if (!Number.isFinite(courseNumber)) return false;
-      return (min == null || courseNumber >= min) && (max == null || courseNumber <= max) && (min != null || max != null);
-    });
+  function apiRequirementMatches(course, item) {
+    const prefix = String(item.prefix ?? "").trim().toLowerCase();
+    if (!prefix || String(course.subject).trim().toLowerCase() !== prefix) return false;
+    if (item.number !== null && item.number !== undefined && String(item.number).trim() !== "") {
+      return String(course.number).trim().toLowerCase() === String(item.number).trim().toLowerCase();
+    }
+    const number = Number.parseInt(course.number, 10);
+    const min = item.min_number == null ? null : Number(item.min_number);
+    const max = item.max_number == null ? null : Number(item.max_number);
+    return Number.isFinite(number) && (min === null || number >= min) && (max === null || number <= max) && (min !== null || max !== null);
   }
 
-  async function loadPrograms() {
-    const rows = await apiGet("/api/programs");
-    const programs = await Promise.all(rows.map(async (row) => {
-      const detail = await apiGet(`/api/programs/${encodeURIComponent(row.id)}/requirements`);
-      const rawRequirements = detail.requirements || [];
-      const requirements = rawRequirements.map((requirement) => ({
-        id: requirement.id,
-        label: requirement.name || `Requirement ${requirement.sort_order ?? requirement.id}`,
-        slots: Math.max(1, Number(requirement.courses_required) || (requirement.items?.length || 1)),
-        items: requirement.items || [],
-        matches(course) { return requirementMatchesCourse(this, course); },
-      }));
-      return { ...row, name: row.name || `Program ${row.id}`, type: String(row.type || "").toLowerCase(), requirements };
+  async function loadProgramsFromApi() {
+    const response = await apiGet("/programs/complete");
+    const rows = Array.isArray(response.data) ? response.data : [];
+    const definitions = rows.map((program) => ({
+      id: program.id,
+      name: program.name,
+      type: String(program.type ?? "").toLowerCase(),
+      requirements: (Array.isArray(program.requirements) ? program.requirements : []).map((requirement) => {
+        const items = Array.isArray(requirement.items) ? requirement.items : [];
+        const slotsValue = Number(requirement.courses_required);
+        return {
+          label: requirement.name,
+          slots: Number.isFinite(slotsValue) && slotsValue > 0 ? slotsValue : Math.max(1, items.length),
+          matches: (course) => items.some((item) => apiRequirementMatches(course, item)),
+        };
+      }),
     }));
-    programDefinitions = programs.filter((program) => ["major", "minor"].includes(program.type));
+    programDefinitions = definitions.filter((program) => ["major", "minor"].includes(program.type));
     majorOptions = [...new Set(programDefinitions.filter((program) => program.type === "major").map((program) => program.name))];
     minorOptions = [...new Set(programDefinitions.filter((program) => program.type === "minor").map((program) => program.name))];
-    if (!majorOptions.length) throw new Error("No major programs were returned by the database.");
-    initialProgramSelection.major = majorOptions[0];
+    if (majorOptions.length && !majorOptions.includes(initialProgramSelection.major)) {
+      initialProgramSelection.major = majorOptions[0];
+    }
+    return response.data_source ?? "unknown";
   }
 
-  async function loadCourseCatalog() {
-    if (courseCatalogCache) return courseCatalogCache;
-    const rows = await apiGet("/api/courses");
-    courseCatalogCache = rows.map(normalizeCourse).filter((course) => course.subject && course.number && course.name);
-    return courseCatalogCache;
-  }
-
+  const PROGRAM_SELECTION_KEY = "pathfinder-program-selection";
+  const initialProgramSelection = { major: "Computer Science", minors: [] };
+  let majorOptions = [...new Set(programDefinitions.filter((program) => program.type === "major").map((program) => program.name))];
+  let minorOptions = [...new Set(programDefinitions.filter((program) => program.type === "minor").map((program) => program.name))];
+  const isProgramsPage = currentPage === "programs";
+  let unsupportedMinorsRemoved = false;
 
   function getProgramSelection() {
     const stored = localStorage.getItem(PROGRAM_SELECTION_KEY);
@@ -122,11 +214,16 @@
 
     const selection = JSON.parse(stored);
     if (!selection || !majorOptions.includes(selection.major) || !Array.isArray(selection.minors) ||
-      selection.minors.length > 2 || selection.minors.some((minor) => !minorOptions.includes(minor) || minor === selection.major) ||
+      selection.minors.length > 2 || selection.minors.some((minor) => typeof minor !== "string" || minor === selection.major) ||
       new Set(selection.minors).size !== selection.minors.length) {
-      const reset = { major: initialProgramSelection.major, minors: [] };
-      saveProgramSelection(reset);
-      return reset;
+      throw new Error("Saved major and minor selections are invalid.");
+    }
+    const supportedMinors = selection.minors.filter((minor) => minorOptions.includes(minor));
+    if (supportedMinors.length !== selection.minors.length) {
+      unsupportedMinorsRemoved = true;
+      const updatedSelection = { major: selection.major, minors: supportedMinors };
+      saveProgramSelection(updatedSelection);
+      return updatedSelection;
     }
     return selection;
   }
@@ -834,40 +931,64 @@
       color: #f5dfe2;
       font-size: 12px;
     }
-    .dashboard-links {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-      margin-top: 16px;
+    .dashboard-page .header-title {
+      font-size: 32px;
     }
-    .dashboard-link {
-      position: relative;
-      display: block;
-      padding: 17px 18px;
-      text-align: left;
-      border: 1px solid ${COLORS.LINE};
-      border-radius: 9px;
-      background: ${COLORS.PANEL};
-      color: ${COLORS.INK};
-      cursor: pointer;
-      transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
-    }
-    .dashboard-link:hover {
-      border-color: ${COLORS.RED};
-      box-shadow: 0 5px 16px rgba(36, 36, 36, 0.07);
-      transform: translateY(-2px);
-    }
-    .dashboard-link-title {
-      display: block;
+    .dashboard-page .header-subtitle {
       font-size: 12px;
-      font-weight: 700;
     }
-    .dashboard-link-copy {
-      display: block;
-      margin-top: 5px;
-      color: ${COLORS.MUTED};
+    .dashboard-page .identity-bar {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .dashboard-page .identity-label {
+      font-size: 10px;
+    }
+    .dashboard-page .identity-value {
+      max-width: none;
+      font-size: 14px;
+    }
+    .dashboard-page .content-card {
+      min-height: 0;
+      padding: 20px 22px;
+    }
+    .dashboard-page .panel-title {
+      font-size: 18px;
+      margin-bottom: 14px;
+    }
+    .dashboard-page .progress-charts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .dashboard-page .progress-ring {
+      width: 108px;
+      height: 108px;
+    }
+    .dashboard-page .progress-ring-value {
+      font-size: 16px;
+    }
+    .dashboard-page .progress-chart-label {
       font-size: 11px;
-      line-height: 1.45;
+      line-height: 1.35;
+      text-align: center;
+    }
+    .dashboard-page .detail-metric-value {
+      font-size: 20px;
+    }
+    .dashboard-page .detail-metric-label {
+      font-size: 12px;
+    }
+    .dashboard-page .next-courses-label {
+      font-size: 11px;
+    }
+    .dashboard-page .empty-courses {
+      font-size: 14px;
+      padding: 12px 14px;
     }
     .empty-courses {
       padding: 14px 16px;
@@ -877,6 +998,120 @@
       color: ${COLORS.MUTED};
       font-size: 12px;
       line-height: 1.5;
+    }
+    .hal-widget {
+      position: fixed;
+      right: 22px;
+      bottom: 20px;
+      z-index: 20;
+      font-family: inherit;
+    }
+    .hal-toggle {
+      display: block;
+      margin-left: auto;
+      padding: 12px 18px;
+      border: 0;
+      border-radius: 999px;
+      background: ${COLORS.RED};
+      box-shadow: 0 5px 18px rgba(36, 36, 36, 0.2);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .hal-toggle:hover,
+    .hal-toggle:focus-visible {
+      background: ${COLORS.DARK_RED};
+    }
+    .hal-panel {
+      display: flex;
+      width: min(360px, calc(100vw - 32px));
+      height: min(500px, calc(100vh - 100px));
+      min-height: 320px;
+      margin-bottom: 12px;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid ${COLORS.LINE};
+      border-radius: 12px;
+      background: ${COLORS.PANEL};
+      box-shadow: 0 8px 30px rgba(36, 36, 36, 0.2);
+    }
+    .hal-panel[hidden] { display: none; }
+    .hal-header {
+      padding: 15px 17px;
+      background: ${COLORS.RED};
+      color: #fff;
+    }
+    .hal-title {
+      margin: 0;
+      font-size: 15px;
+    }
+    .hal-status {
+      margin: 4px 0 0;
+      color: #f6dfe3;
+      font-size: 11px;
+    }
+    .hal-messages {
+      display: flex;
+      min-height: 0;
+      padding: 14px;
+      flex: 1;
+      flex-direction: column;
+      gap: 10px;
+      overflow: auto;
+    }
+    .hal-message {
+      max-width: 94%;
+      margin: 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #f3f3f3;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-line;
+    }
+    .hal-message--user {
+      align-self: flex-end;
+      background: #f8e9ec;
+    }
+    .hal-action {
+      align-self: flex-start;
+      padding: 8px 11px;
+      border: 1px solid ${COLORS.RED};
+      border-radius: 6px;
+      background: #fff;
+      color: ${COLORS.DARK_RED};
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .hal-action:hover,
+    .hal-action:focus-visible {
+      background: #f8e9ec;
+    }
+    .hal-options {
+      display: grid;
+      padding: 10px 12px 12px;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      border-top: 1px solid ${COLORS.LINE};
+    }
+    .hal-option {
+      min-height: 36px;
+      padding: 7px 8px;
+      border: 1px solid ${COLORS.LINE};
+      border-radius: 6px;
+      background: #fff;
+      color: ${COLORS.INK};
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.25;
+      cursor: pointer;
+    }
+    .hal-option:hover,
+    .hal-option:focus-visible {
+      border-color: ${COLORS.RED};
+      color: ${COLORS.DARK_RED};
     }
     @media (max-width: 900px) {
       .pathfinder-shell {
@@ -973,6 +1208,9 @@
       .header-title {
         font-size: 26px;
       }
+      .dashboard-page .header-title {
+        font-size: 28px;
+      }
       .identity-bar {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -987,8 +1225,12 @@
       .detail-metrics {
         grid-template-columns: 1fr;
       }
-      .dashboard-links {
-        grid-template-columns: 1fr;
+      .hal-widget {
+        right: 12px;
+        bottom: 12px;
+      }
+      .hal-panel {
+        height: min(500px, calc(100vh - 82px));
       }
     }
   `;
@@ -1141,7 +1383,7 @@
   async function buildProgramPage(page) {
     const selection = getProgramSelection();
     const selectedPrograms = page.label === "Major" ? [selection.major] : selection.minors;
-    const intro = textNode("p", "detail-intro", `Track your ${page.label.toLowerCase()} requirements using courses saved in your demo course history.`);
+    const intro = textNode("p", "detail-intro", `Track your ${page.label.toLowerCase()} requirements using courses saved in your course history.`);
     const cards = [];
 
     if (!selectedPrograms.length) {
@@ -1167,34 +1409,14 @@
     return [intro, ...cards];
   }
 
-  function buildDashboardLinks() {
-    const links = createElement("section", "dashboard-links");
-    const selection = getProgramSelection();
-    [
-      ["programs", "My Programs", "Choose your major and up to two minors."],
-      ["major", "Major requirements", `Explore your ${selection.major} progress.`],
-      ["minor", "Minor requirements", selection.minors.length ? `See your ${selection.minors.join(" and ")} progress.` : "Add minors or continue without one."],
-      ["courses", "Course history & catalog", "Add or update completed coursework."],
-      ["opportunities", "Opportunity Finder", "Explore programs matching your courses."],
-    ].forEach(([target, title, copy]) => {
-      const button = createElement("button", "dashboard-link");
-      button.type = "button";
-      button.append(textNode("span", "dashboard-link-title", title), textNode("span", "dashboard-link-copy", copy));
-      button.addEventListener("click", () => goToPage(target));
-      links.appendChild(button);
-    });
-    return links;
-  }
-
   function buildProgramSelectionPage() {
     const selection = getProgramSelection();
     const card = createElement("section", "planner-card");
     card.appendChild(textNode("h2", "planner-card-title", "Choose your academic programs"));
-    card.appendChild(textNode("p", "planner-note", "Select one major and up to two minors. Your choices are saved in this browser and used for your dashboard and requirement progress."));
-    if (apiLoadError) card.appendChild(textNode("p", "planner-error", `Could not load programs from the server: ${apiLoadError}`));
-    if (!majorOptions.length) {
-      card.appendChild(textNode("p", "planner-note", "No major programs are available. Check the backend and Supabase connection."));
-      return card;
+    card.appendChild(textNode("p", "planner-note", "Select one major and up to two minors. Your choices are currently saved in this browser and used for your dashboard and requirement progress."));
+    card.appendChild(textNode("p", "planner-note", "Current requirement data is available for Computer Science and Mathematics. Other programs are not selectable yet."));
+    if (unsupportedMinorsRemoved) {
+      card.appendChild(textNode("p", "planner-error", "A saved minor was removed because its requirement data is not available."));
     }
 
     const form = createElement("form", "program-selection-form");
@@ -1288,10 +1510,58 @@
     return card;
   }
 
+  function parseCSV(text) {
+    const rows = [];
+    let row = [];
+    let field = "";
+    let quoted = false;
+
+    for (let index = 0; index < text.length; index += 1) {
+      const character = text[index];
+      if (quoted) {
+        if (character === '"' && text[index + 1] === '"') {
+          field += '"';
+          index += 1;
+        } else if (character === '"') {
+          quoted = false;
+        } else {
+          field += character;
+        }
+      } else if (character === '"') {
+        quoted = true;
+      } else if (character === ",") {
+        row.push(field);
+        field = "";
+      } else if (character === "\n" || character === "\r") {
+        if (character === "\r" && text[index + 1] === "\n") index += 1;
+        row.push(field);
+        if (row.some((value) => value.trim())) rows.push(row);
+        row = [];
+        field = "";
+      } else {
+        field += character;
+      }
+    }
+    if (field || row.length) {
+      row.push(field);
+      if (row.some((value) => value.trim())) rows.push(row);
+    }
+    return rows;
+  }
+
+  async function loadCourseCatalog() {
+    const response = await apiGet("/courses");
+    const rows = Array.isArray(response.data) ? response.data : [];
+    const courses = rows.map(normalizeApiCourse)
+      .filter((course) => course.subject && course.number && course.name);
+    if (!courses.length) throw new Error("The API returned no complete course records.");
+    return courses;
+  }
+
   function buildHistoryEditor(catalog) {
     const card = createElement("section", "planner-card");
     card.appendChild(textNode("h2", "planner-card-title", "Completed course history"));
-    card.appendChild(textNode("p", "planner-note", "Choose courses from the live Supabase catalog and save their grade and course units. Course history is stored locally in this browser for the demo."));
+    card.appendChild(textNode("p", "planner-note", "Choose courses from the catalog and save their grade and course units. Records are currently stored in this browser; student-history syncing is not yet available in the backend."));
 
     const form = createElement("form", "course-entry-form");
     const courseField = createElement("div", "planner-field");
@@ -1328,7 +1598,7 @@
     unitsLabel.htmlFor = "completed-course-units";
     unitsInput.id = "completed-course-units";
     unitsInput.type = "number";
-    unitsInput.min = "0.5";
+    unitsInput.min = "0";
     unitsInput.max = "10";
     unitsInput.step = "0.5";
     unitsInput.required = true;
@@ -1426,7 +1696,9 @@
 
     courseInput.addEventListener("input", () => {
       const selected = catalog.find((course) => course.code.toLowerCase() === courseInput.value.trim().toLowerCase());
-      if (selected && selected.units) unitsInput.value = String(selected.units);
+      if (selected && selected.units !== null && selected.units !== undefined) {
+        unitsInput.value = String(selected.units);
+      }
     });
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -1437,8 +1709,8 @@
         return;
       }
       const units = Number.parseFloat(unitsInput.value);
-      if (!Number.isFinite(units) || units < 0.5 || units > 10) {
-        showError("Enter course units between 0.5 and 10.");
+      if (!Number.isFinite(units) || units < 0 || units > 10) {
+        showError("Enter course units between 0 and 10.");
         return;
       }
       const history = getCourseHistory();
@@ -1481,10 +1753,11 @@
 
     try {
       const courses = await loadCourseCatalog();
+      // Display the complete course catalog returned by the backend, not only STEM subjects.
       const listedCourses = courses;
       page.appendChild(buildHistoryEditor(listedCourses));
 
-      summary.textContent = `${listedCourses.length.toLocaleString()} courses loaded from Supabase`;
+      summary.textContent = `${listedCourses.length.toLocaleString()} courses in the full catalog`;
       const filterInput = createElement("input");
       filterInput.type = "search";
       filterInput.placeholder = "Filter catalog by subject, number, or name";
@@ -1535,7 +1808,7 @@
     const history = getCourseHistory();
     const content = createElement("section", "planner-card");
     content.appendChild(textNode("h2", "planner-card-title", "Programs closest to your completed coursework"));
-    content.appendChild(textNode("p", "planner-note", "Suggestions are separate from your declarations and use program requirements retrieved from Supabase. Course history remains local demo data."));
+    content.appendChild(textNode("p", "planner-note", "Suggestions are separate from your declarations and use the Mathematics and Computer Science requirement set."));
     if (!history.length) {
       content.appendChild(textNode("p", "planner-note", "Add completed courses in Courses to see ranked program suggestions."));
       return content;
@@ -1580,18 +1853,133 @@
     return content;
   }
 
+  function buildHalChatWidget() {
+    const widget = createElement("section", "hal-widget");
+    const panel = createElement("div", "hal-panel");
+    panel.hidden = true;
+    panel.setAttribute("aria-label", "HAL help menu");
+
+    const header = createElement("div", "hal-header");
+    header.append(
+      textNode("h2", "hal-title", "HAL · PathFinder Assistant"),
+      textNode("p", "hal-status", "Choose an option to get started")
+    );
+    const messages = createElement("div", "hal-messages");
+    messages.setAttribute("role", "log");
+    messages.setAttribute("aria-live", "polite");
+    messages.setAttribute("aria-relevant", "additions");
+    messages.appendChild(textNode("p", "hal-message", "Hi! I can help you use your academic planner. Select a topic below."));
+
+    const options = createElement("div", "hal-options");
+    const menuItems = [
+      { label: "Check my progress", action: "progress" },
+      { label: "Find or add courses", action: "courses" },
+      { label: "Explore opportunities", action: "opportunities" },
+      { label: "Manage my programs", action: "programs" },
+      { label: "How PathFinder works", action: "help" },
+    ];
+
+    const addMessage = (text, isUser = false) => {
+      const message = textNode("p", `hal-message${isUser ? " hal-message--user" : ""}`, text);
+      messages.appendChild(message);
+      messages.scrollTop = messages.scrollHeight;
+    };
+
+    const addAction = (label, pageName) => {
+      const button = textNode("button", "hal-action", label);
+      button.type = "button";
+      button.addEventListener("click", () => goToPage(pageName));
+      messages.appendChild(button);
+      messages.scrollTop = messages.scrollHeight;
+    };
+
+    const respond = (action) => {
+      const item = menuItems.find((option) => option.action === action);
+      addMessage(item.label, true);
+
+      if (action === "progress") {
+        const history = getCourseHistory();
+        const selection = getProgramSelection();
+        const units = history.reduce((total, course) => total + course.units, 0);
+        const major = programDefinitions.find((program) => program.type === "major" && program.name === selection.major);
+        const majorProgress = major ? evaluateProgram(major, history).percent : null;
+        const minors = selection.minors.map((name) => {
+          const program = programDefinitions.find((item) => item.type === "minor" && item.name === name);
+          return program ? `${name}: ${evaluateProgram(program, history).percent}%` : `${name}: requirements unavailable`;
+        });
+        const progressSummary = [
+          `Major: ${selection.major}${majorProgress === null ? "" : ` (${majorProgress}% complete)`}`,
+          `Minors: ${minors.join(", ") || "None selected"}`,
+          `Courses recorded: ${history.length} · Units earned: ${units.toFixed(1)} / 32`,
+          `Cumulative GPA: ${calculateGpa(history) || "Unavailable"}`,
+        ].join("\n");
+        addMessage(progressSummary);
+        addAction("Open progress dashboard", "index");
+        return;
+      }
+
+      if (action === "courses") {
+        addMessage("The Courses page includes the catalog and your saved course history. You can add courses, record grades and units, and edit or remove entries.");
+        addAction("Go to Courses", "courses");
+        return;
+      }
+
+      if (action === "opportunities") {
+        addMessage("Opportunity Finder compares your completed courses with the available program requirements and ranks possible matches.");
+        addAction("Explore opportunities", "opportunities");
+        return;
+      }
+
+      if (action === "programs") {
+        addMessage("My Programs lets you choose one major and up to two minors. Your choices are saved in this browser and used for progress calculations.");
+        addAction("Manage my programs", "programs");
+        return;
+      }
+
+      addMessage("Use Courses to record completed classes, My Programs to set your major and minors, and the dashboard to see progress. Opportunity Finder suggests other programs based on your saved courses.");
+      addAction("Start with Courses", "courses");
+    };
+
+    menuItems.forEach(({ label, action }) => {
+      const button = textNode("button", "hal-option", label);
+      button.type = "button";
+      button.addEventListener("click", () => respond(action));
+      options.appendChild(button);
+    });
+
+    const toggle = textNode("button", "hal-toggle", "Ask HAL");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-controls", "hal-panel");
+    panel.id = "hal-panel";
+    toggle.addEventListener("click", () => {
+      panel.hidden = !panel.hidden;
+      toggle.setAttribute("aria-expanded", String(!panel.hidden));
+      toggle.textContent = panel.hidden ? "Ask HAL" : "Close HAL";
+      if (!panel.hidden) options.querySelector("button").focus();
+    });
+
+    panel.append(header, messages, options);
+    widget.append(panel, toggle);
+    return widget;
+  }
+
   // Set up the page layout.
   async function init() {
-    if (sessionStorage.getItem("pathfinder-demo-authenticated") !== "true") {
+    if (sessionStorage.getItem("pathfinder-authenticated") !== "true") {
       window.location.replace("login.html");
       return;
     }
 
+    let apiLoadError = "";
     try {
-      await loadPrograms();
+      await loadProgramsFromApi();
     } catch (error) {
-      apiLoadError = error.message || "Unable to load academic programs.";
-      console.error("Could not load programs from the backend:", error);
+      apiLoadError = "Program requirements could not be loaded from the backend. Check the API and Supabase connection.";
+      programDefinitions = [];
+      majorOptions = [];
+      minorOptions = [];
+      console.error("Could not load programs from API:", error);
     }
 
     const page = pageContent[currentPage];
@@ -1645,7 +2033,7 @@
 
     const signOutButton = textNode("button", "sidebar-button sidebar-signout", "LOG OUT");
     signOutButton.addEventListener("click", () => {
-      sessionStorage.removeItem("pathfinder-demo-authenticated");
+      sessionStorage.removeItem("pathfinder-authenticated");
       window.location.replace("login.html");
     });
 
@@ -1663,14 +2051,19 @@
       signOutButton
     );
 
-    const main = createElement("main", "main-panel");
+    const main = createElement("main", `main-panel${currentPage === "index" ? " dashboard-page" : ""}`);
     let header = null;
+    if (apiLoadError) {
+      const warning = textNode("p", "planner-error", apiLoadError);
+      warning.setAttribute("role", "alert");
+      main.appendChild(warning);
+    }
 
     if (isCoursesPage) {
-      header = buildPageHeader("Courses", "COURSE CATALOG · SUPABASE");
+      header = buildPageHeader("Courses", "2026–27 COURSE CATALOG");
       main.appendChild(header);
       shell.append(sidebar, main);
-      document.body.append(shell);
+      document.body.append(shell, buildHalChatWidget());
       main.appendChild(await buildCourseList());
       return;
     }
@@ -1678,21 +2071,21 @@
       header = buildPageHeader("Opportunity Finder", "PROGRAM SUGGESTIONS BASED ON COMPLETED COURSES");
       main.append(header, await buildOpportunityPage());
       shell.append(sidebar, main);
-      document.body.append(shell);
+      document.body.append(shell, buildHalChatWidget());
       return;
     }
     if (isProgramsPage) {
       header = buildPageHeader("My Programs", "CHOOSE YOUR MAJOR AND UP TO TWO MINORS");
       main.append(header, buildProgramSelectionPage());
       shell.append(sidebar, main);
-      document.body.append(shell);
+      document.body.append(shell, buildHalChatWidget());
       return;
     }
     if (page) {
       header = buildPageHeader(page.title, page.subtitle);
       main.append(header, ...await buildProgramPage(page));
       shell.append(sidebar, main);
-      document.body.append(shell);
+      document.body.append(shell, buildHalChatWidget());
       return;
     }
 
@@ -1700,7 +2093,6 @@
 
     const contentCard = createElement("section", "content-card");
     contentCard.appendChild(textNode("h2", "panel-title", "Progress"));
-    if (apiLoadError) contentCard.appendChild(textNode("p", "planner-error", `Academic programs could not be loaded: ${apiLoadError}`));
 
     const history = getCourseHistory();
     const selection = getProgramSelection();
@@ -1726,9 +2118,9 @@
     charts.appendChild(buildMetric(`${completedUnits.toFixed(1)} / 32`, "Course units earned"));
 
     contentCard.append(charts, buildNextCourses());
-    main.append(header, buildIdentityBar(history), contentCard, buildDashboardLinks());
+    main.append(header, buildIdentityBar(history), contentCard);
     shell.append(sidebar, main);
-    document.body.append(shell);
+    document.body.append(shell, buildHalChatWidget());
   }
 
   if (document.readyState === "loading") {
