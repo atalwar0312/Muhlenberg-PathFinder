@@ -19,7 +19,7 @@ snapshots. Google Drive remains the team's collaborative workspace.
 - [Assignment 5 — Internal Server Architecture](presentations/assignment-05-internal-server-architecture.pptx)
 
 ## Weekly reports
-Reports for Weeks 3–8 are stored in `weekly-reports/`.
+Repository snapshots for Weeks 3–8 are stored in `weekly-reports/`. Check the team's shared workspace for any later reports not yet committed.
 
 ## Other documentation
 - `planning/` — Team formation, sprint planning and timeline
@@ -31,9 +31,12 @@ Reports for Weeks 3–8 are stored in `weekly-reports/`.
 - `references/` — Historical technical references
 
 ## Development status
-The backend uses Layered Architecture and currently runs
-against fictional demonstration data. The frontend is not yet
-connected to the backend, and live PostgreSQL integration
-remains future development work.
+The backend follows Layered Architecture and its committed demonstration routes use fictional sample data. The frontend provides a browser-based planner, login prototype and HAL help widget. Do not assume the widget uses a live AI service or that the backend has a live PostgreSQL connection without checking the latest code and hosting configuration.
+
+## Repository navigation
+- [Repository layout and cleanup backlog](../REPOSITORY_GUIDE.md)
+- [Team contribution guide](../CONTRIBUTING.md)
+- [CI workflow](../.github/workflows/ci.yml)
+- [GitHub Pages preview workflow](../.github/workflows/deploy-pages.yml)
 
 Do not commit credentials, private student records or .env files.
