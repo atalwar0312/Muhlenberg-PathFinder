@@ -41,4 +41,4 @@ GitHub Actions runs backend tests automatically on pull requests and pushes to `
 
 ## Avoid breaking live deployments
 
-The repository has root-level frontend copies and a canonical `pathfinder/frontend/UI/` tree. Do not move or remove either set until all deployment paths and relative URLs have been verified.
+A cleanup pull request proposes removing redundant root-level frontend copies. Keep the canonical application under `pathfinder/frontend/UI/` and verify hosting URLs before merging any structural cleanup.
