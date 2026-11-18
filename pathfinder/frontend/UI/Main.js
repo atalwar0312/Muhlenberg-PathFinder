@@ -1933,9 +1933,14 @@
 
     const signOutButton = textNode("button", "sidebar-button sidebar-signout", "LOG OUT");
     signOutButton.addEventListener("click", () => {
+      const confirmed = window.confirm(
+        "Are you sure you want to log out of PathFinder?"
+      );
+      if (!confirmed) return;
       sessionStorage.removeItem("pathfinder-authenticated");
       window.location.replace("login.html?signed_out=1");
     });
+
 
     sidebarNav.append(progressButton, submenu, coursesButton, opportunitiesButton, programsButton);
 
