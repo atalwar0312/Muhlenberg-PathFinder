@@ -1965,7 +1965,7 @@
     const signOutButton = textNode("button", "sidebar-button sidebar-signout", "LOG OUT");
     signOutButton.addEventListener("click", () => {
       sessionStorage.removeItem("pathfinder-authenticated");
-      window.location.replace("login.html");
+      window.location.replace("login.html?signed_out=1");
     });
 
     sidebarNav.append(progressButton, submenu, coursesButton, opportunitiesButton, programsButton);
