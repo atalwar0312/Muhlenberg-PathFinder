@@ -1968,23 +1968,23 @@
       "LOG OUT"
     );
     
-    // Current logout functionality
-    signOutButton.addEventListener("click", () => {
-      sessionStorage.removeItem("pathfinder-authenticated");
-      window.location.replace("login.html?signed_out=1");
-    });
-    
-    // New logout confirmation for CI/CD demo
+    // // Current logout functionality
     // signOutButton.addEventListener("click", () => {
-    //   const confirmed = window.confirm(
-    //     "Are you sure you want to log out of PathFinder?"
-    //   );
-    //
-    //   if (!confirmed) return;
-    //
     //   sessionStorage.removeItem("pathfinder-authenticated");
     //   window.location.replace("login.html?signed_out=1");
     // });
+    
+    // New logout confirmation for CI/CD demo
+    signOutButton.addEventListener("click", () => {
+      const confirmed = window.confirm(
+        "Are you sure you want to log out of PathFinder?"
+      );
+    
+      if (!confirmed) return;
+    
+      sessionStorage.removeItem("pathfinder-authenticated");
+      window.location.replace("login.html?signed_out=1");
+    });
 
 
 
