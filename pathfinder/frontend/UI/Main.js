@@ -120,11 +120,11 @@
       return cached.payload;
     }
 
-    try {
-      const response = await fetch(`${API_BASE_URL}${path}`, {
-        headers: { Accept: "application/json" },
-        credentials: "same-origin",
-      });
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: { Accept: "application/json" },
+    credentials: "same-origin",
+    signal: AbortSignal.timeout(15000),
+    });
       let payload;
       try { payload = await response.json(); } catch { payload = null; }
       if (!response.ok) {
@@ -208,25 +208,46 @@
   const isProgramsPage = currentPage === "programs";
   let unsupportedMinorsRemoved = false;
 
-  function getProgramSelection() {
-    const stored = localStorage.getItem(PROGRAM_SELECTION_KEY);
-    if (!stored) return { major: initialProgramSelection.major, minors: [...initialProgramSelection.minors] };
 
-    const selection = JSON.parse(stored);
-    if (!selection || !majorOptions.includes(selection.major) || !Array.isArray(selection.minors) ||
-      selection.minors.length > 2 || selection.minors.some((minor) => typeof minor !== "string" || minor === selection.major) ||
-      new Set(selection.minors).size !== selection.minors.length) {
-      throw new Error("Saved major and minor selections are invalid.");
+  function getProgramSelection() {
+    const fallback = {
+      major: initialProgramSelection.major,
+      minors: [...initialProgramSelection.minors]
+    };
+  
+    try {
+      const stored = localStorage.getItem(PROGRAM_SELECTION_KEY);
+      if (!stored) return fallback;
+  
+      const selection = JSON.parse(stored);
+  
+      if (!selection || typeof selection.major !== "string") {
+        return fallback;
+      }
+  
+      const major =
+        !majorOptions.length || majorOptions.includes(selection.major)
+          ? selection.major
+          : majorOptions[0];
+  
+      const minors = Array.isArray(selection.minors)
+        ? [...new Set(selection.minors)]
+            .filter(minor =>
+              typeof minor === "string" &&
+              minor !== major &&
+              (!minorOptions.length || minorOptions.includes(minor))
+            )
+            .slice(0, 2)
+        : [];
+  
+      return { major, minors };
+  
+    } catch (error) {
+      console.warn("Could not load saved program selection:", error);
+      return fallback;
     }
-    const supportedMinors = selection.minors.filter((minor) => minorOptions.includes(minor));
-    if (supportedMinors.length !== selection.minors.length) {
-      unsupportedMinorsRemoved = true;
-      const updatedSelection = { major: selection.major, minors: supportedMinors };
-      saveProgramSelection(updatedSelection);
-      return updatedSelection;
-    }
-    return selection;
   }
+
 
   function saveProgramSelection(selection) {
     localStorage.setItem(PROGRAM_SELECTION_KEY, JSON.stringify(selection));
