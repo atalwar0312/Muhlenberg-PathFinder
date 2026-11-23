@@ -3,10 +3,10 @@
 (function () {
   // Student details for the planner.
   const student = {
-    name: "Student profile unavailable",
-    student_id: "Not connected",
-    class_year: "Not available",
-    graduation_term: "Not available",
+    name: "Andrew Jarrah",
+    student_id: "0000000000",
+    class_year: "Junior",
+    graduation_term: "Spring 2028",
   };
 
   // Top summary fields.
