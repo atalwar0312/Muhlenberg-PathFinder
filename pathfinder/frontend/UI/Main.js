@@ -34,17 +34,17 @@
   const isHistoryPage = currentPage === "history";
   const isOpportunitiesPage = currentPage === "opportunities";
   const COURSE_HISTORY_KEY = "pathfinder-course-history";
-  const COURSE_CATALOG_URL = "./course-catalog.csv";
+  const API_BASE_URL = "/api";
   const LETTER_GRADE_POINTS = {
     "A+": 4, A: 4, "A-": 3.7, "B+": 3.3, B: 3, "B-": 2.7,
     "C+": 2.3, C: 2, "C-": 1.7, "D+": 1.3, D: 1, "D-": 0.7, F: 0,
   };
-  const programDefinitions = [
+  let programDefinitions = [
     {
       name: "Computer Science",
       type: "major",
       requirements: [
-        { label: "Computer Science I", matches: (course) => course.subject === "CSI" && /^Computer Science I(?::|$)/.test(course.name), slots: 1 },
+        { label: "Computer Science I", matches: (course) => course.subject === "CSI" && course.name.includes("Computer Science I"), slots: 1 },
         { label: "CSI 111 — Computer Science II", codes: ["CSI 111"], slots: 1 },
         { label: "CSI 210 — Software Engineering", codes: ["CSI 210"], slots: 1 },
         { label: "CSI 220 — Data Structures & Algorithms", codes: ["CSI 220"], slots: 1 },
@@ -103,10 +103,108 @@
     },
   ];
 
+  const API_CACHE_PREFIX = "pathfinder-api-cache:";
+  const API_CACHE_TTL_MS = 5 * 60 * 1000;
+
+  async function apiGet(path) {
+    const cacheKey = `${API_CACHE_PREFIX}${path}`;
+    let cached = null;
+    try {
+      const stored = sessionStorage.getItem(cacheKey);
+      if (stored) cached = JSON.parse(stored);
+    } catch {
+      cached = null;
+    }
+
+    if (cached?.savedAt && Date.now() - cached.savedAt < API_CACHE_TTL_MS) {
+      return cached.payload;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin",
+      });
+      let payload;
+      try { payload = await response.json(); } catch { payload = null; }
+      if (!response.ok) {
+        throw new Error(payload?.error || `API request failed (${response.status})`);
+      }
+      try {
+        sessionStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), payload }));
+      } catch {
+        // Storage can be unavailable or full; the live response remains usable.
+      }
+      return payload;
+    } catch (error) {
+      // Keep the last known catalog usable during a temporary network outage.
+      if (cached?.payload) return cached.payload;
+      throw error;
+    }
+  }
+
+  function normalizeApiCourse(row) {
+    const subject = String(row.prefix ?? row.subject ?? "").trim();
+    const number = String(row.number ?? "").trim();
+    const name = String(row.name ?? row.title ?? "").trim();
+    const hasUnits = row.units !== null && row.units !== undefined && String(row.units).trim() !== "";
+    const parsedUnits = hasUnits ? Number(row.units) : null;
+    return {
+      id: row.id,
+      subject,
+      prefix: subject,
+      number,
+      name,
+      code: `${subject} ${number}`.trim(),
+      units: Number.isFinite(parsedUnits) && parsedUnits >= 0 ? parsedUnits : null,
+      prerequisites: row.prerequisites_text ?? "",
+      description: row.description ?? "",
+      gar: row.gar ?? null,
+    };
+  }
+
+  function apiRequirementMatches(course, item) {
+    const prefix = String(item.prefix ?? "").trim().toLowerCase();
+    if (!prefix || String(course.subject).trim().toLowerCase() !== prefix) return false;
+    if (item.number !== null && item.number !== undefined && String(item.number).trim() !== "") {
+      return String(course.number).trim().toLowerCase() === String(item.number).trim().toLowerCase();
+    }
+    const number = Number.parseInt(course.number, 10);
+    const min = item.min_number == null ? null : Number(item.min_number);
+    const max = item.max_number == null ? null : Number(item.max_number);
+    return Number.isFinite(number) && (min === null || number >= min) && (max === null || number <= max) && (min !== null || max !== null);
+  }
+
+  async function loadProgramsFromApi() {
+    const response = await apiGet("/programs/complete");
+    const rows = Array.isArray(response.data) ? response.data : [];
+    const definitions = rows.map((program) => ({
+      id: program.id,
+      name: program.name,
+      type: String(program.type ?? "").toLowerCase(),
+      requirements: (Array.isArray(program.requirements) ? program.requirements : []).map((requirement) => {
+        const items = Array.isArray(requirement.items) ? requirement.items : [];
+        const slotsValue = Number(requirement.courses_required);
+        return {
+          label: requirement.name,
+          slots: Number.isFinite(slotsValue) && slotsValue > 0 ? slotsValue : Math.max(1, items.length),
+          matches: (course) => items.some((item) => apiRequirementMatches(course, item)),
+        };
+      }),
+    }));
+    programDefinitions = definitions.filter((program) => ["major", "minor"].includes(program.type));
+    majorOptions = [...new Set(programDefinitions.filter((program) => program.type === "major").map((program) => program.name))];
+    minorOptions = [...new Set(programDefinitions.filter((program) => program.type === "minor").map((program) => program.name))];
+    if (majorOptions.length && !majorOptions.includes(initialProgramSelection.major)) {
+      initialProgramSelection.major = majorOptions[0];
+    }
+    return response.data_source ?? "unknown";
+  }
+
   const PROGRAM_SELECTION_KEY = "pathfinder-program-selection";
   const initialProgramSelection = { major: "Computer Science", minors: [] };
-  const majorOptions = [...new Set(programDefinitions.filter((program) => program.type === "major").map((program) => program.name))];
-  const minorOptions = [...new Set(programDefinitions.filter((program) => program.type === "minor").map((program) => program.name))];
+  let majorOptions = [...new Set(programDefinitions.filter((program) => program.type === "major").map((program) => program.name))];
+  let minorOptions = [...new Set(programDefinitions.filter((program) => program.type === "minor").map((program) => program.name))];
   const isProgramsPage = currentPage === "programs";
   let unsupportedMinorsRemoved = false;
 
@@ -144,18 +242,6 @@
 
   function saveCourseHistory(history) {
     localStorage.setItem(COURSE_HISTORY_KEY, JSON.stringify(history));
-  }
-
-  function isBlockedAsFirstComputerScienceCourse(course, history, editingCode = null) {
-    const selection = getProgramSelection();
-    if (selection.major !== "Computer Science") return false;
-    if (!["CSI 111", "CSI 970"].includes(course.code)) return false;
-    const remainingHistory = editingCode
-      ? history.filter((saved) => saved.code !== editingCode)
-      : history;
-    return !remainingHistory.some((saved) =>
-      saved.subject === "CSI" && !["CSI 111", "CSI 970"].includes(saved.code)
-    );
   }
 
   function calculateGpa(history) {
@@ -1327,7 +1413,7 @@
     const selection = getProgramSelection();
     const card = createElement("section", "planner-card");
     card.appendChild(textNode("h2", "planner-card-title", "Choose your academic programs"));
-    card.appendChild(textNode("p", "planner-note", "Select one major and up to two minors. Your choices are saved in this browser and used for your dashboard and requirement progress."));
+    card.appendChild(textNode("p", "planner-note", "Select one major and up to two minors. Your choices are currently saved in this browser and used for your dashboard and requirement progress."));
     card.appendChild(textNode("p", "planner-note", "Current requirement data is available for Computer Science and Mathematics. Other programs are not selectable yet."));
     if (unsupportedMinorsRemoved) {
       card.appendChild(textNode("p", "planner-error", "A saved minor was removed because its requirement data is not available."));
@@ -1464,45 +1550,18 @@
   }
 
   async function loadCourseCatalog() {
-    const response = await fetch(COURSE_CATALOG_URL);
-    if (!response.ok) throw new Error(`Catalog request failed (${response.status}).`);
-
-    const rows = parseCSV(await response.text());
-    const headers = rows.shift();
-    if (!headers) throw new Error("The course catalog is empty.");
-    const normalizedHeaders = headers.map((header) => header.trim().toLowerCase());
-    const subjectIndex = normalizedHeaders.indexOf("subject");
-    const numberIndex = normalizedHeaders.indexOf("number");
-    const nameIndex = normalizedHeaders.indexOf("name");
-    const unitsIndex = normalizedHeaders.indexOf("course unit(s):");
-    if (subjectIndex < 0 || numberIndex < 0 || nameIndex < 0) {
-      throw new Error("The catalog is missing the Subject, Number, or Name column.");
-    }
-
-    const courses = rows.map((row) => {
-      const subject = (row[subjectIndex] || "").trim();
-      const number = (row[numberIndex] || "").trim();
-      const name = (row[nameIndex] || "").trim();
-      const unitValue = unitsIndex < 0 ? "" : (row[unitsIndex] || "").trim();
-      const parsedUnits = Number.parseFloat(unitValue);
-      return {
-        subject,
-        number,
-        name,
-        code: `${subject} ${number}`,
-        units: Number.isFinite(parsedUnits) && parsedUnits > 0 ? parsedUnits : null,
-      };
-    }).filter((course) => course.subject && course.number && course.name);
-
-    if (!courses.length) throw new Error("The catalog did not contain any complete course entries.");
+    const response = await apiGet("/courses");
+    const rows = Array.isArray(response.data) ? response.data : [];
+    const courses = rows.map(normalizeApiCourse)
+      .filter((course) => course.subject && course.number && course.name);
+    if (!courses.length) throw new Error("The API returned no complete course records.");
     return courses;
   }
 
   function buildHistoryEditor(catalog) {
     const card = createElement("section", "planner-card");
     card.appendChild(textNode("h2", "planner-card-title", "Completed course history"));
-    card.appendChild(textNode("p", "planner-note", "Choose courses from the catalog and save their grade and course units. Records are stored locally in this browser."));
-    card.appendChild(textNode("p", "planner-note", "Computer Science majors must complete another CSI course before CSI 111 or CSI 970."));
+    card.appendChild(textNode("p", "planner-note", "Choose courses from the catalog and save their grade and course units. Records are currently stored in this browser; student-history syncing is not yet available in the backend."));
 
     const form = createElement("form", "course-entry-form");
     const courseField = createElement("div", "planner-field");
@@ -1539,7 +1598,7 @@
     unitsLabel.htmlFor = "completed-course-units";
     unitsInput.id = "completed-course-units";
     unitsInput.type = "number";
-    unitsInput.min = "0.5";
+    unitsInput.min = "0";
     unitsInput.max = "10";
     unitsInput.step = "0.5";
     unitsInput.required = true;
@@ -1637,7 +1696,9 @@
 
     courseInput.addEventListener("input", () => {
       const selected = catalog.find((course) => course.code.toLowerCase() === courseInput.value.trim().toLowerCase());
-      if (selected && selected.units) unitsInput.value = String(selected.units);
+      if (selected && selected.units !== null && selected.units !== undefined) {
+        unitsInput.value = String(selected.units);
+      }
     });
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -1647,16 +1708,12 @@
         showError("Choose a course code from the catalog suggestions.");
         return;
       }
-      const history = getCourseHistory();
-      if (isBlockedAsFirstComputerScienceCourse(selected, history, editingCode)) {
-        showError("CSI 111 and CSI 970 cannot be your first Computer Science major course.");
-        return;
-      }
       const units = Number.parseFloat(unitsInput.value);
-      if (!Number.isFinite(units) || units < 0.5 || units > 10) {
-        showError("Enter course units between 0.5 and 10.");
+      if (!Number.isFinite(units) || units < 0 || units > 10) {
+        showError("Enter course units between 0 and 10.");
         return;
       }
+      const history = getCourseHistory();
       const record = {
         code: selected.code,
         subject: selected.subject,
@@ -1696,10 +1753,11 @@
 
     try {
       const courses = await loadCourseCatalog();
-      const listedCourses = courses.filter((course) => ["MTH", "MTH/STA", "STA", "CSI"].includes(course.subject));
+      // Display the complete course catalog returned by the backend, not only STEM subjects.
+      const listedCourses = courses;
       page.appendChild(buildHistoryEditor(listedCourses));
 
-      summary.textContent = `${listedCourses.length.toLocaleString()} Mathematics, Statistics, and Computer Science courses`;
+      summary.textContent = `${listedCourses.length.toLocaleString()} courses in the full catalog`;
       const filterInput = createElement("input");
       filterInput.type = "search";
       filterInput.placeholder = "Filter catalog by subject, number, or name";
@@ -1913,6 +1971,17 @@
       return;
     }
 
+    let apiLoadError = "";
+    try {
+      await loadProgramsFromApi();
+    } catch (error) {
+      apiLoadError = "Program requirements could not be loaded from the backend. Check the API and Supabase connection.";
+      programDefinitions = [];
+      majorOptions = [];
+      minorOptions = [];
+      console.error("Could not load programs from API:", error);
+    }
+
     const page = pageContent[currentPage];
     document.title = isCoursesPage ? "Courses | PathFinder" :
       isOpportunitiesPage ? "Opportunity Finder | PathFinder" :
@@ -1961,20 +2030,8 @@
       active: isProgramsPage,
       onClick: () => goToPage("programs")
     });
-    
-    const signOutButton = textNode(
-      "button",
-      "sidebar-button sidebar-signout",
-      "LOG OUT"
-    );
-    
-    // // Current logout functionality
-    // signOutButton.addEventListener("click", () => {
-    //   sessionStorage.removeItem("pathfinder-authenticated");
-    //   window.location.replace("login.html?signed_out=1");
-    // });
-    
-    // New logout confirmation for CI/CD demo
+
+    const signOutButton = textNode("button", "sidebar-button sidebar-signout", "LOG OUT");
     signOutButton.addEventListener("click", () => {
       const confirmed = window.confirm(
         "Are you sure you want to log out of PathFinder?"
@@ -1985,8 +2042,6 @@
       sessionStorage.removeItem("pathfinder-authenticated");
       window.location.replace("login.html?signed_out=1");
     });
-
-
 
     sidebarNav.append(progressButton, submenu, coursesButton, opportunitiesButton, programsButton);
 
@@ -2004,6 +2059,11 @@
 
     const main = createElement("main", `main-panel${currentPage === "index" ? " dashboard-page" : ""}`);
     let header = null;
+    if (apiLoadError) {
+      const warning = textNode("p", "planner-error", apiLoadError);
+      warning.setAttribute("role", "alert");
+      main.appendChild(warning);
+    }
 
     if (isCoursesPage) {
       header = buildPageHeader("Courses", "2026–27 COURSE CATALOG");
