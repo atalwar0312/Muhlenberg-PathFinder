@@ -120,11 +120,12 @@
       return cached.payload;
     }
 
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { Accept: "application/json" },
-    credentials: "same-origin",
-    signal: AbortSignal.timeout(15000),
-    });
+      try {
+        const response = await fetch(`${API_BASE_URL}${path}`, {
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+          signal: AbortSignal.timeout(15000),
+        });
       let payload;
       try { payload = await response.json(); } catch { payload = null; }
       if (!response.ok) {
@@ -177,7 +178,11 @@
 
   async function loadProgramsFromApi() {
     const response = await apiGet("/programs/complete");
-    const rows = Array.isArray(response.data) ? response.data : [];
+    const rows = Array.isArray(response?.data) ? response.data : [];
+
+    if (rows.length === 0) {
+      throw new Error("No academic programs were returned by Supabase.");
+    }
     const definitions = rows.map((program) => ({
       id: program.id,
       name: program.name,
@@ -2150,9 +2155,29 @@
     document.body.append(shell, buildHalChatWidget());
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
+    function startApp() {
+    init().catch((error) => {
+      console.error("PathFinder startup failed:", error);
+  
+      const message = document.createElement("div");
+      message.style.padding = "30px";
+  
+      const heading = document.createElement("h2");
+      heading.textContent = "PathFinder could not load.";
+  
+      const details = document.createElement("p");
+      details.textContent = error.message;
+  
+      message.append(heading, details);
+      document.body.appendChild(message);
+    });
   }
-})();
+  
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", startApp);
+    } else {
+      startApp();
+    }
+    })();
+  
+   
